@@ -2,7 +2,7 @@
  File        : main.c
  Description : Main source file for 'mphidflash,' a simple command-line tool for
                communicating with Microchips USB HID-Bootloader and downloading new
-               firmware. 
+               firmware.
 
  History     : 2009-02-19  Phillip Burgess
                  * Initial implementation
@@ -11,7 +11,7 @@
                2010-12-28  Petr Olivka
                  * program and verify only data for defined memory areas
                  * send only even length of data to PIC
-               
+
  License     : Copyright (C) 2009 Phillip Burgess
                Copyright (C) 2009 Thomas Fischl, Dominik Fisch (www.FundF.net)
                Copyright (C) 2010 Petr Olivka

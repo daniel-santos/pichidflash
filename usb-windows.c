@@ -7,7 +7,7 @@
 
  History     : 2009-12-26  Thomas Fischl, Dominik Fisch (www.FundF.net)
                  * Initial windows support
-               
+
  License     : Copyright (C) 2009 Thomas Fischl, Dominik Fisch (www.FundF.net)
 
                This file is part of 'mphidflash' program.
@@ -35,12 +35,12 @@
 #include <ddk/hidpi.h>
 #include "mphidflash.h"
 
-HANDLE usbdevhandle = INVALID_HANDLE_VALUE; 
+HANDLE usbdevhandle = INVALID_HANDLE_VALUE;
 unsigned char        usbBufX[65];
 unsigned char *      usbBuf = &usbBufX[1];
 
-HIDP_CAPS       Capabilities;   
-PHIDP_PREPARSED_DATA        HidParsedData;   
+HIDP_CAPS       Capabilities;
+PHIDP_PREPARSED_DATA        HidParsedData;
 
 ErrorCode usbOpen(
   const unsigned short vendorID,
@@ -49,11 +49,11 @@ ErrorCode usbOpen(
 	ErrorCode      status = ERR_DEVICE_NOT_FOUND;
 	int i;
 	GUID                                hidGuid;
-	HDEVINFO deviceInfoList;	
+	HDEVINFO deviceInfoList;
 	SP_DEVICE_INTERFACE_DATA deviceInfo;
 	SP_DEVICE_INTERFACE_DETAIL_DATA     *deviceDetails = NULL;
 	DWORD                               size;
-	
+
 	HIDD_ATTRIBUTES                     deviceAttributes;
 
 	HidD_GetHidGuid(&hidGuid);
@@ -71,7 +71,7 @@ ErrorCode usbOpen(
 
 		if (!SetupDiEnumDeviceInterfaces(deviceInfoList, 0, &hidGuid, i, &deviceInfo)) {
 			/* finished walk through device list */
-            		break;  
+            		break;
 		}
 
 		/* get size for detail structure */
@@ -99,13 +99,13 @@ ErrorCode usbOpen(
             		continue;
 		}
 
-		 HidD_GetPreparsedData(usbdevhandle, &HidParsedData);   
-            
-         /* extract the capabilities info */   
-         HidP_GetCaps(HidParsedData ,&Capabilities);   
-            
-         /* Free the memory allocated when getting the preparsed data */   
-         HidD_FreePreparsedData(HidParsedData);         
+		 HidD_GetPreparsedData(usbdevhandle, &HidParsedData);
+
+         /* extract the capabilities info */
+         HidP_GetCaps(HidParsedData ,&Capabilities);
+
+         /* Free the memory allocated when getting the preparsed data */
+         HidD_FreePreparsedData(HidParsedData);
 
 		/* okay, here we found our device */
 		status = ERR_NONE;
@@ -159,7 +159,7 @@ ErrorCode usbWrite(
 //			printf("usb read failed, Error %u\n", GetLastError());
 			return ERR_USB_READ;
 		}
-	
+
 #ifdef DEBUG
 		(void)puts("Done reading\nReceived:");
 		for(i=0;i<8;i++) (void)printf("%02x ",usbBuf[i]);

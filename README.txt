@@ -1,5 +1,5 @@
-'mphidflash' is a simple command-line tool for communicating with Microchips 
-USB HID-Bootloader and downloading new firmware. mphidflash supports Linux, 
+'mphidflash' is a simple command-line tool for communicating with Microchips
+USB HID-Bootloader and downloading new firmware. mphidflash supports Linux,
 Mac OS X (Leopard and later), and Windows.
 
 The 'mphidflash' project is hosted at https://github.com/ApertureLabsLtd/mphidflash
@@ -33,7 +33,7 @@ Then install with the command:
 
 	sudo make install64
 
-This will copy the appropriate executable to /usr/local/bin/mphidflash so you 
+This will copy the appropriate executable to /usr/local/bin/mphidflash so you
 don't need to specify a complete path to the program each time.
 
 
@@ -79,18 +79,18 @@ to compile mphidflash, in the Terminal window type:
 	make -f Makefile.win
 
 This will create a .exe in the binaries sub-directory, which can be called
-from the Windows commmand line - e.g. 'mphidflash-1.6-win-32.exe'. You should 
+from the Windows commmand line - e.g. 'mphidflash-1.6-win-32.exe'. You should
 copy this file somewhere on your executable path and rename it to 'mphidflash.exe'.
 
 
 Usage
 =====
 To upload a new program to your PIC, it must be connected to your computer and
-set into bootloader mode. mphidflash can then be used with the following 
+set into bootloader mode. mphidflash can then be used with the following
 options:
 
 -help			Display help screen (alternately: -?)
--write <file>	Upload given file to PIC 
+-write <file>	Upload given file to PIC
 -reset			Reset PIC
 -noverify		Skip verification step
 -erase			Erase PIC memory

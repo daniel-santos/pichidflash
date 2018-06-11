@@ -11,7 +11,7 @@
                2010-12-28  Petr Olivka
                  * program and verify only data for defined memory areas
                  * send only even length of data to PIC
-               
+
  License     : Copyright (C) 2009 Phillip Burgess
                Copyright (C) 2009 Thomas Fischl, Dominik Fisch (www.FundF.net)
                Copyright (C) 2010 Petr Olivka
@@ -80,9 +80,9 @@
 #define TypeConfigWords   0x03
 #define	TypeEndOfTypeList 0xFF
 
-/* Device family */ 		
-#define DEVICE_FAMILY_PIC18 0x01 		
-#define DEVICE_FAMILY_PIC24 0x02 		
+/* Device family */
+#define DEVICE_FAMILY_PIC18 0x01
+#define DEVICE_FAMILY_PIC24 0x02
 #define DEVICE_FAMILY_PIC32 0x03
 
 /* Error codes returned by various functions */

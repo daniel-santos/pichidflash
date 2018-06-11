@@ -6,7 +6,7 @@
                  * Initial implementation
                2009-12-26  Thomas Fischl, Dominik Fisch (www.FundF.net)
                  * Ported mmap functions to windows
-               
+
  License     : Copyright (C) 2009 Phillip Burgess
                Copyright (C) 2009 Thomas Fischl, Dominik Fisch (www.FundF.net)
 
@@ -49,17 +49,17 @@ static int            hexFd;              /* Open hex file descriptor    */
 static size_t         hexFileSize;        /* Save for use by munmap()    */
 static unsigned char  hexBuf[56];         /* Data read/written to USB    */
 extern unsigned char *usbBuf;             /* In usb code                 */
-unsigned char bytesPerAddress = 1;        /* Bytes in flash per address */ 		
+unsigned char bytesPerAddress = 1;        /* Bytes in flash per address */
 
-/**************************************************************************** 		
-Function : hexSetBytesPerAddress 		
-Description : Sets given byte width 		
-Parameters : unsigned char Bytes per address 		
-Returns : Nothing (void) 		
-****************************************************************************/ 		
-void hexSetBytesPerAddress(unsigned char bytes) 		
-{ 		
-bytesPerAddress = bytes; 		
+/****************************************************************************
+Function : hexSetBytesPerAddress
+Description : Sets given byte width
+Parameters : unsigned char Bytes per address
+Returns : Nothing (void)
+****************************************************************************/
+void hexSetBytesPerAddress(unsigned char bytes)
+{
+bytesPerAddress = bytes;
 }
 
 /****************************************************************************
@@ -97,7 +97,7 @@ ErrorCode hexOpen(char * const filename)
 			if (handle != NULL) {
 				hexFileData = MapViewOfFile(handle, FILE_MAP_COPY, 0, 0, hexFileSize);
 				hexPlusOne = &hexFileData[1];
-				CloseHandle(handle); 
+				CloseHandle(handle);
 				return ERR_NONE;
 			}
 #endif
@@ -191,16 +191,16 @@ static ErrorCode issueBlock(
 #endif
 
 	// check device memory blocks are programmable
-	if ( verifyBlockProgrammable( &addr, &len ) ) { 
-#ifdef DEBUG	
-		printf( "Skip data on address %04x with length %d\n", addr, len ); 
+	if ( verifyBlockProgrammable( &addr, &len ) ) {
+#ifdef DEBUG
+		printf( "Skip data on address %04x with length %d\n", addr, len );
 #endif
-		return ERR_NONE; 
+		return ERR_NONE;
 	}
 	// length must be even
 	if ( len & 1 ) {
-#ifdef DEBUG	
-		printf( "Add one byte to data on address %04x with length %d\n", addr, len ); 
+#ifdef DEBUG
+		printf( "Add one byte to data on address %04x with length %d\n", addr, len );
 #endif
 		hexBuf[ len++ ] = 0xff;
 	}
