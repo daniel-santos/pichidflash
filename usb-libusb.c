@@ -80,19 +80,19 @@ ErrorCode usbOpen(
 }
 
 ErrorCode usbWrite(
-  const char len,
+  const unsigned char len,
   const char read)
 {
     int bytesSent;
     int bytesRead;
 
-    bytesSent = usb_interrupt_write(usbdevice, 0x01, usbBuf, len, 5000);
+    bytesSent = usb_interrupt_write(usbdevice, 0x01, (char*)usbBuf, len, 5000);
     if (bytesSent < 0)
         return ERR_USB_WRITE;
 
     if (read) {
 
-        bytesRead = usb_interrupt_read(usbdevice, 0x81, usbBuf, 64, 5000);
+        bytesRead = usb_interrupt_read(usbdevice, 0x81, (char*)usbBuf, 64, 5000);
 		if (bytesRead < 0)
 			return ERR_USB_READ;
 	}

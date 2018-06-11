@@ -114,7 +114,7 @@ extern ErrorCode
 	hexOpen(char *),
 	hexWrite(char),
 	usbOpen(unsigned short,unsigned short),
-	usbWrite(char,char);
+	usbWrite(unsigned char,char);
 extern void
 	hexClose(void),
 	usbClose(void),

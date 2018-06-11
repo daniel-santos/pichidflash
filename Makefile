@@ -3,8 +3,6 @@ VERSION_SUB  = 6
 
 CC       = gcc
 OBJS     = main.o hex.o
-EXECPATH = binaries
-DISTPATH = dist
 
 ifeq ($(shell uname -s),Darwin)
 # Rules for Mac OS X
@@ -20,7 +18,7 @@ else
   SYSTEM = linux
 endif
 
-CFLAGS += -DVERSION_MAIN=$(VERSION_MAIN) -DVERSION_SUB=$(VERSION_SUB) -g -Wall -Wextra -Werror -Wno-error=sign-compare
+CFLAGS += -DVERSION_MAIN=$(VERSION_MAIN) -DVERSION_SUB=$(VERSION_SUB) -g -Wall -Wextra -Werror
 EXEC = mphidflash
 
 all: $(EXEC)
@@ -32,8 +30,7 @@ all: $(EXEC)
 
 
 mphidflash: $(OBJS)
-	$(CC) $(OBJS) $(LDFLAGS) -o $(EXECPATH)/$(EXEC)
-	strip $(EXECPATH)/$(EXEC)
+	$(CC) $(OBJS) $(LDFLAGS) -o $(EXEC)
 
 clean:
-	rm -f *.o core
+	rm -f *.o core $(EXEC)

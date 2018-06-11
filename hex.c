@@ -112,9 +112,9 @@ ErrorCode hexOpen(char * const filename)
 }
 
 /* check memory address & length are in a programmable memory area, as reported by device's Bootloader */
-static int verifyBlockProgrammable( unsigned int *addr, char *len )
+static int verifyBlockProgrammable( unsigned int *addr, unsigned char *len )
 {
-	int i, isA, isL, MA, ML;
+	unsigned i, isA, isL, MA, ML;
 	for ( i = 0; i < devQuery.memBlocks; i++ )
 	{
 		/* only look at programmable memory blocks */
@@ -179,7 +179,7 @@ static int verifyBlockProgrammable( unsigned int *addr, char *len )
  ****************************************************************************/
 static ErrorCode issueBlock(
   unsigned int  addr,
-  char          len,
+  unsigned char len,
   char          verify)
 {
 	ErrorCode status;
