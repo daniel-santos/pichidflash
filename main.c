@@ -37,6 +37,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "mphidflash.h"
+#include "config.h"
 
 sQuery devQuery;
 
@@ -135,7 +136,7 @@ int main(
 		} else if(!strncasecmp(argv[i],"-h",2) ||
 		          !strncasecmp(argv[i],"-?",2)) {
 			(void)printf(
-"mphidflash v%d.%d: a Microchip HID Bootloader utility\n"
+"mphidflash v%s: a Microchip HID Bootloader utility\n"
 "Option     Description                                      Default\n"
 "-------------------------------------------------------------------------\n"
 "-w <file>  Write hex file to device (will erase first)      None\n"
@@ -145,7 +146,7 @@ int main(
 "-u         Unlock configuration memory before erase/write   Config locked\n"
 "-v <hex>   USB device vendor ID                             %04x\n"
 "-p <hex>   USB device product ID                            %04x\n"
-"-h or -?   Help\n", VERSION_MAIN, VERSION_SUB, vendorID, productID);
+"-h or -?   Help\n", VERSION, vendorID, productID);
 			return 0;
 		} else {
 			status = ERR_CMD_UNKNOWN;
