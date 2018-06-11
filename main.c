@@ -51,7 +51,8 @@ extern unsigned char * usbBuf;  /* In usb code */
 #define ACTION_UNLOCK (1 << 0)
 #define ACTION_ERASE  (1 << 1)
 #define ACTION_VERIFY (1 << 2)
-#define ACTION_RESET  (1 << 3)
+#define ACTION_SIGN   (1 << 3)
+#define ACTION_RESET  (1 << 4)
 
 /****************************************************************************
  Function    : main
@@ -131,6 +132,8 @@ int main(
 				hexFile  = argv[++i];
 				actions |= ACTION_ERASE;
 			}
+		} else if(!strncasecmp(argv[i],"-s",2)) {
+			actions |= ACTION_SIGN;
 		} else if(!strncasecmp(argv[i],"-r",2)) {
 			actions |= ACTION_RESET;
 		} else if(!strncasecmp(argv[i],"-h",2) ||
@@ -141,6 +144,7 @@ int main(
 "-------------------------------------------------------------------------\n"
 "-w <file>  Write hex file to device (will erase first)      None\n"
 "-e         Erase device code space (implicit if -w)         No erase\n"
+"-s         Sign firmware image (recent PIC bootloaders)     No\n"
 "-r         Reset device on program exit                     No reset\n"
 "-n         No verify after write                            Verify on\n"
 "-u         Unlock configuration memory before erase/write   Config locked\n"
@@ -244,10 +248,20 @@ int main(
 			hexClose();
 		}
 
+		if((ERR_NONE == status) && (actions & ACTION_SIGN)) {
+			(void)puts("Signing image...");
+			usbBuf[0] = SIGN_FLASH;
+			status = usbWrite(1,0);
+			if (status == ERR_USB_WRITE)
+			    status = 0;
+		}
+
 		if((ERR_NONE == status) && (actions & ACTION_RESET)) {
 			(void)puts("Resetting device...");
 			usbBuf[0] = RESET_DEVICE;
 			status = usbWrite(1,0);
+			if (status == ERR_USB_WRITE)
+			    status = 0;
 		}
 
 		usbClose();

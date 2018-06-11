@@ -1,6 +1,7 @@
 AUTOMAKE_OPTIONS = foreign
 
-CFLAGS = -O2 -g3 -Wall -Wextra -Wno-unused-parameter -Werror
+CFLAGS ?= -O2 -g3
+CFLAGS += -Wall -Wextra -Wno-unused-parameter -Werror
 
 bin_PROGRAMS = mphidflash
 mphidflash_SOURCES = main.c hex.c usb-libusb.c
