@@ -38,44 +38,44 @@ unsigned char * usbBuf = usbBufX;
 usb_dev_handle *usbdevice = NULL;
 
 ErrorCode usbOpen(
-  const unsigned short vendorID,
-  const unsigned short productID)
+	const unsigned short vendorID,
+	const unsigned short productID)
 {
-    struct usb_bus      *bus;
-    struct usb_device   *dev;
+	struct usb_bus      *bus;
+	struct usb_device   *dev;
 
-    usb_init();
-    usb_find_busses();
-    usb_find_devices();
+	usb_init();
+	usb_find_busses();
+	usb_find_devices();
 
-    for (bus=usb_get_busses(); bus; bus=bus->next) {
-        for (dev=bus->devices; dev; dev=dev->next) {
-            if (dev->descriptor.idVendor == vendorID && dev->descriptor.idProduct == productID) {
+	for (bus = usb_get_busses(); bus; bus = bus->next) {
+		for (dev = bus->devices; dev; dev = dev->next) {
+			if (dev->descriptor.idVendor == vendorID && dev->descriptor.idProduct == productID) {
 
-                usbdevice = usb_open(dev);
-                if (!usbdevice) {
-                    fprintf(stderr, "Warning: matching device found, but cannot open usb device: %s\n", usb_strerror());
-                    continue;
-                }
+				usbdevice = usb_open(dev);
+				if (!usbdevice) {
+					fprintf(stderr, "Warning: matching device found, but cannot open usb device: %s\n", usb_strerror());
+					continue;
+				}
 
-                if (usb_claim_interface(usbdevice, 0) != 0) {
+				if (usb_claim_interface(usbdevice, 0) != 0) {
 #ifdef LIBUSB_HAS_DETACH_KERNEL_DRIVER_NP
-                    usb_detach_kernel_driver_np(usbdevice, 0);
+					usb_detach_kernel_driver_np(usbdevice, 0);
 #endif
-                    if (usb_claim_interface(usbdevice, 0) != 0) {
-                        usb_close(usbdevice);
-                        usbdevice = NULL;
-                        fprintf(stderr, "Warning: cannot claim interface: %s\n", usb_strerror());
-                        continue;
-                    }
-                }
+					if (usb_claim_interface(usbdevice, 0) != 0) {
+						usb_close(usbdevice);
+						usbdevice = NULL;
+						fprintf(stderr, "Warning: cannot claim interface: %s\n", usb_strerror());
+						continue;
+					}
+				}
 
-                return ERR_NONE;
-            }
-        }
-    }
+				return ERR_NONE;
+			}
+		}
+	}
 
-    return ERR_DEVICE_NOT_FOUND;
+	return ERR_DEVICE_NOT_FOUND;
 
 }
 

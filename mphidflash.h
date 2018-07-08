@@ -46,10 +46,10 @@
 /* On Intel architectures, can make some crass endianism optimizations */
 
 #if defined(i386) || defined(__x86_64__)
-#define bufWrite32(src,pos,val) *(unsigned int *)&src[pos] = val
+#define bufWrite32(src, pos, val) *(unsigned int *)&src[pos] = val
 #define bufRead32(pos)          *(unsigned int *)&usbBuf[pos]
 #else
-#define bufWrite32(src,pos,val) src[pos    ] =  val        & 0xff; \
+#define bufWrite32(src, pos, val) src[pos    ] =  val        & 0xff; \
                                 src[pos + 1] = (val >>  8) & 0xff; \
                                 src[pos + 2] = (val >> 16) & 0xff; \
                                 src[pos + 3] = (val >> 24)
@@ -114,8 +114,8 @@ typedef enum
 extern ErrorCode
 	hexOpen(char *),
 	hexWrite(char),
-	usbOpen(unsigned short,unsigned short),
-	usbWrite(unsigned char,char);
+	usbOpen(unsigned short, unsigned short),
+	usbWrite(unsigned char, char);
 extern void
 	hexClose(void),
 	usbClose(void),

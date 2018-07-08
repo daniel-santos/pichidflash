@@ -1,6 +1,6 @@
 /****************************************************************************
  File        : main.c
- Description : Main source file for 'mphidflash,' a simple command-line tool for
+ Description : Main source file for 'mphidflash, ' a simple command-line tool for
                communicating with Microchips USB HID-Bootloader and downloading new
                firmware.
 
@@ -113,31 +113,31 @@ int main(
 
 	for(i=1;(i < argc) && (ERR_NONE == status);i++) {
 		eol = (i >= (argc - 1));
-		if(!strncasecmp(argv[i],"-v",2)) {
-			if(eol || (1 != sscanf(argv[++i],"%x",&vendorID)))
+		if(!strncasecmp(argv[i], "-v", 2)) {
+			if(eol || (1 != sscanf(argv[++i], "%x", &vendorID)))
 				status = ERR_CMD_ARG;
-		} else if(!strncasecmp(argv[i],"-p",2)) {
-			if(eol || (1 != sscanf(argv[++i],"%x",&productID)))
+		} else if(!strncasecmp(argv[i], "-p", 2)) {
+			if(eol || (1 != sscanf(argv[++i], "%x", &productID)))
 				status = ERR_CMD_ARG;
-		} else if(!strncasecmp(argv[i],"-u",2)) {
+		} else if(!strncasecmp(argv[i], "-u", 2)) {
 			actions |= ACTION_UNLOCK;
-		} else if(!strncasecmp(argv[i],"-e",2)) {
+		} else if(!strncasecmp(argv[i], "-e", 2)) {
 			actions |= ACTION_ERASE;
-		} else if(!strncasecmp(argv[i],"-n",2)) {
+		} else if(!strncasecmp(argv[i], "-n", 2)) {
 			actions &= ~ACTION_VERIFY;
-		} else if(!strncasecmp(argv[i],"-w",2)) {
+		} else if(!strncasecmp(argv[i], "-w", 2)) {
 			if(eol) {
 				status   = ERR_CMD_ARG;
 			} else {
 				hexFile  = argv[++i];
 				actions |= ACTION_ERASE;
 			}
-		} else if(!strncasecmp(argv[i],"-s",2)) {
+		} else if(!strncasecmp(argv[i], "-s", 2)) {
 			actions |= ACTION_SIGN;
-		} else if(!strncasecmp(argv[i],"-r",2)) {
+		} else if(!strncasecmp(argv[i], "-r", 2)) {
 			actions |= ACTION_RESET;
-		} else if(!strncasecmp(argv[i],"-h",2) ||
-		          !strncasecmp(argv[i],"-?",2)) {
+		} else if(!strncasecmp(argv[i], "-h", 2) ||
+		          !strncasecmp(argv[i], "-?", 2)) {
 			(void)printf(
 "mphidflash v%s: a Microchip HID Bootloader utility\n"
 "Option     Description                                      Default\n"
@@ -160,20 +160,20 @@ int main(
 	/* After successful command-line parsage, find/open USB device. */
 
 	if((ERR_NONE == status) &&
-	   (ERR_NONE == (status = usbOpen(vendorID,productID)))) {
+	   (ERR_NONE == (status = usbOpen(vendorID, productID)))) {
 
 		/* And start doing stuff... */
 
 		(void)printf("USB HID device found");
 		usbBuf[0] = QUERY_DEVICE;
-		if(ERR_NONE == (status = usbWrite(1,1))) {
+		if(ERR_NONE == (status = usbWrite(1, 1))) {
 			memcpy( &devQuery, usbBuf, 64 );
 			i = 0;
 			while ( devQuery.mem[ i ].Type != TypeEndOfTypeList ) i++;
 			devQuery.memBlocks = i;
 			for ( i = 0; i < devQuery.memBlocks; i++ )
 			  if(devQuery.mem[i].Type == TypeProgramMemory) {
-			    (void)printf(": %d bytes free\n",devQuery.mem[i].Length);
+			    (void)printf(": %d bytes free\n", devQuery.mem[i].Length);
 			    break;
 			    }
 
@@ -206,7 +206,7 @@ int main(
 			(void)puts("Unlocking configuration memory...");
 			usbBuf[0] = UNLOCK_CONFIG;
 			usbBuf[1] = UNLOCKCONFIG;
-			status    = usbWrite(2,0);
+			status    = usbWrite(2, 0);
 		}
 		// disable all configuration blocks in devQuery if locked
 		if ( !( actions & ACTION_UNLOCK ) ) {
@@ -227,7 +227,7 @@ int main(
 		if((ERR_NONE == status) && (actions & ACTION_ERASE)) {
 			(void)puts("Erasing...");
 			usbBuf[0] = ERASE_DEVICE;
-			status    = usbWrite(1,0);
+			status    = usbWrite(1, 0);
 			/* The query here isn't needed for any technical
 			   reason, just makes the presentation better.
 			   The ERASE_DEVICE command above returns
@@ -236,12 +236,12 @@ int main(
 			   So this query just keeps the "Writing" message
 			   or others from being displayed prematurely. */
 			usbBuf[0] = QUERY_DEVICE;
-			status    = usbWrite(1,1);
+			status    = usbWrite(1, 1);
 		}
 
 		if(hexFile) {
 			if(ERR_NONE == status) {
-			  (void)printf("Writing hex file '%s':",hexFile);
+			  (void)printf("Writing hex file '%s':", hexFile);
 			  status = hexWrite((actions & ACTION_VERIFY) != 0);
 			  (void)putchar('\n');
 			}
@@ -251,7 +251,7 @@ int main(
 		if((ERR_NONE == status) && (actions & ACTION_SIGN)) {
 			(void)puts("Signing image...");
 			usbBuf[0] = SIGN_FLASH;
-			status = usbWrite(1,0);
+			status = usbWrite(1, 0);
 			if (status == ERR_USB_WRITE)
 			    status = 0;
 		}
@@ -259,7 +259,7 @@ int main(
 		if((ERR_NONE == status) && (actions & ACTION_RESET)) {
 			(void)puts("Resetting device...");
 			usbBuf[0] = RESET_DEVICE;
-			status = usbWrite(1,0);
+			status = usbWrite(1, 0);
 			if (status == ERR_USB_WRITE)
 			    status = 0;
 		}
@@ -268,9 +268,9 @@ int main(
 	}
 
 	if(ERR_NONE != status) {
-		(void)printf("%s Error",argv[0]);
+		(void)printf("%s Error", argv[0]);
 		if(status <= ERR_EOL)
-			(void)printf(": %s\n",errorString[status - 1]);
+			(void)printf(": %s\n", errorString[status - 1]);
 		else
 			(void)puts(" of indeterminate type.");
 	}
