@@ -138,7 +138,7 @@ int main(
 			actions |= ACTION_RESET;
 		} else if(!strncasecmp(argv[i], "-h", 2) ||
 		          !strncasecmp(argv[i], "-?", 2)) {
-			(void)printf(
+			printf(
 "mphidflash v%s: a Microchip HID Bootloader utility\n"
 "Option     Description                                      Default\n"
 "-------------------------------------------------------------------------\n"
@@ -164,7 +164,7 @@ int main(
 
 		/* And start doing stuff... */
 
-		(void)printf("USB HID device found");
+		printf("USB HID device found");
 		usbBuf[0] = QUERY_DEVICE;
 		if(ERR_NONE == (status = usbWrite(1, 1))) {
 			memcpy( &devQuery, usbBuf, 64 );
@@ -173,37 +173,37 @@ int main(
 			devQuery.memBlocks = i;
 			for ( i = 0; i < devQuery.memBlocks; i++ )
 			  if(devQuery.mem[i].Type == TypeProgramMemory) {
-			    (void)printf(": %d bytes free\n", devQuery.mem[i].Length);
+			    printf(": %d bytes free\n", devQuery.mem[i].Length);
 			    break;
 			    }
 
-			(void)printf("Device family: ");
+			printf("Device family: ");
  			switch (devQuery.DeviceFamily)
 				{
 				case DEVICE_FAMILY_PIC18:
 					hexSetBytesPerAddress(1);
-					(void)printf("PIC18\n");
+					printf("PIC18\n");
 					break;
 				case DEVICE_FAMILY_PIC24:
 					hexSetBytesPerAddress(2);
-					(void)printf("PIC24\n");
+					printf("PIC24\n");
 					break;
 				case DEVICE_FAMILY_PIC32:
 					hexSetBytesPerAddress(1);
-					(void)printf("PIC32\n");
+					printf("PIC32\n");
 					break;
 				default:
 					hexSetBytesPerAddress(1);
-					(void)printf("Unknown. Bytes per address set to 1.\n");
+					printf("Unknown. Bytes per address set to 1.\n");
 					break;
 			}
 
 
 		}
-		(void)putchar('\n');
+		putchar('\n');
 
 		if((ERR_NONE == status) && (actions & ACTION_UNLOCK)) {
-			(void)puts("Unlocking configuration memory...");
+			puts("Unlocking configuration memory...");
 			usbBuf[0] = UNLOCK_CONFIG;
 			usbBuf[1] = UNLOCKCONFIG;
 			status    = usbWrite(2, 0);
@@ -225,7 +225,7 @@ int main(
 			hexFile = NULL;  /* Open or mmap error */
 
 		if((ERR_NONE == status) && (actions & ACTION_ERASE)) {
-			(void)puts("Erasing...");
+			puts("Erasing...");
 			usbBuf[0] = ERASE_DEVICE;
 			status    = usbWrite(1, 0);
 			/* The query here isn't needed for any technical
@@ -241,15 +241,15 @@ int main(
 
 		if(hexFile) {
 			if(ERR_NONE == status) {
-			  (void)printf("Writing hex file '%s':", hexFile);
+			  printf("Writing hex file '%s':", hexFile);
 			  status = hexWrite((actions & ACTION_VERIFY) != 0);
-			  (void)putchar('\n');
+			  putchar('\n');
 			}
 			hexClose();
 		}
 
 		if((ERR_NONE == status) && (actions & ACTION_SIGN)) {
-			(void)puts("Signing image...");
+			puts("Signing image...");
 			usbBuf[0] = SIGN_FLASH;
 			status = usbWrite(1, 0);
 			if (status == ERR_USB_WRITE)
@@ -257,7 +257,7 @@ int main(
 		}
 
 		if((ERR_NONE == status) && (actions & ACTION_RESET)) {
-			(void)puts("Resetting device...");
+			puts("Resetting device...");
 			usbBuf[0] = RESET_DEVICE;
 			status = usbWrite(1, 0);
 			if (status == ERR_USB_WRITE)
@@ -268,11 +268,11 @@ int main(
 	}
 
 	if(ERR_NONE != status) {
-		(void)printf("%s Error", argv[0]);
+		printf("%s Error", argv[0]);
 		if(status <= ERR_EOL)
-			(void)printf(": %s\n", errorString[status - 1]);
+			printf(": %s\n", errorString[status - 1]);
 		else
-			(void)puts(" of indeterminate type.");
+			puts(" of indeterminate type.");
 	}
 
 	return (int)status;

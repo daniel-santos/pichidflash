@@ -55,7 +55,7 @@ unsigned char bytesPerAddress = 1;        /* Bytes in flash per address  */
 Function : hexSetBytesPerAddress
 Description : Sets given byte width
 Parameters : unsigned char Bytes per address
-Returns : Nothing (void)
+Returns : Nothing
 ****************************************************************************/
 void hexSetBytesPerAddress(unsigned char bytes)
 {
@@ -106,7 +106,7 @@ ErrorCode hexOpen(char * const filename)
 			/* Else clean up and return error code */
 			hexFileData = NULL;
 		}
-		(void)close(hexFd);
+		close(hexFd);
 	}
 
 	return status;
@@ -185,9 +185,9 @@ static ErrorCode issueBlock(
 	ErrorCode status;
 
 #ifdef DEBUG
-	(void)printf("Address: %08x  Len %d\n", addr, len);
+	printf("Address: %08x  Len %d\n", addr, len);
 #else
-	(void)putchar('.');
+	putchar('.');
 	fflush(stdout);
 #endif
 
@@ -224,16 +224,17 @@ static ErrorCode issueBlock(
 #ifdef DEBUG
 			int i;
 			if (memcmp(&usbBuf[64 - len], hexBuf, len)) {
-				(void)puts("Verify FAIL\nExpected:");
-				(void)printf("NA NA NA NA NA NA NA NA - ");
-				for (i = 0; i < (56 - len); i++)(void)printf("NA ");
+				puts("Verify FAIL\nExpected:");
+				printf("NA NA NA NA NA NA NA NA - ");
+				for (i = 0; i < (56 - len); i++)
+					printf("NA ");
 				for (i = 0; i < len; i++)
-					(void)printf("%02x ", hexBuf[i]);
-				(void)putchar('\n');
+					printf("%02x ", hexBuf[i]);
+				putchar('\n');
 				fflush(stdout);
 				return ERR_VERIFY;
 			} else {
-				(void)puts("Verify OK");
+				puts("Verify OK");
 				return ERR_NONE;
 			}
 #else
@@ -258,7 +259,8 @@ static ErrorCode issueBlock(
 	}
 
 #ifdef DEBUG
-	if (status != ERR_NONE)(void)puts("ERROR");
+	if (status != ERR_NONE)
+		puts("ERROR");
 #endif
 
 	return status;
@@ -289,7 +291,8 @@ ErrorCode hexWrite(const char verify)
 		addrSave = 0; /* PIC start addr for hex buffer contents */
 		addr32   = 0;
 
-		if (pass)(void)printf("\nVerifying:");
+		if (pass)
+			printf("\nVerifying:");
 
 		for (;;) { /* Each line in file */
 
@@ -399,7 +402,7 @@ ErrorCode hexWrite(const char verify)
 			if (ERR_NONE != (status = usbWrite(1, 0))) return status;
 		}
 #ifdef DEBUG
-		(void)printf("PASS %d of %d COMPLETE\n", pass, verify);
+		printf("PASS %d of %d COMPLETE\n", pass, verify);
 #endif
 	}
 
@@ -409,19 +412,19 @@ ErrorCode hexWrite(const char verify)
 /****************************************************************************
  Function    : hexClose
  Description : Unmaps and closes previously-opened hex file.
- Parameters  : None (void)
- Returns     : Nothing (void)
+ Parameters  : None
+ Returns     : Nothing
  Notes       : File is assumed to have already been successfully opened
                by the time this function is called; no checks performed here.
  ****************************************************************************/
 void hexClose(void)
 {
 #ifndef WIN
-	(void)munmap(hexFileData, hexFileSize);
+	munmap(hexFileData, hexFileSize);
 #else
 	UnmapViewOfFile(hexFileData);
 #endif
 	hexFileData = NULL;
-	(void)close(hexFd);
+	close(hexFd);
 }
 
