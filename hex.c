@@ -291,8 +291,7 @@ ErrorCode hexWrite(const char verify)
 		addrSave = 0; /* PIC start addr for hex buffer contents */
 		addr32   = 0;
 
-		if (pass)
-			printf("\nVerifying:");
+		if (pass)printf("\nVerifying:");
 
 		for (;;) { /* Each line in file */
 

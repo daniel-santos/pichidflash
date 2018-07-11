@@ -52,8 +52,8 @@ ErrorCode usbOpen(
 		for (dev = bus->devices; dev; dev = dev->next) {
 			if (dev->descriptor.idVendor == vendorID && dev->descriptor.idProduct == productID) {
 
-				usbdevice = usb_open(dev);
-				if (!usbdevice) {
+				if (!(usbdevice = usb_open(dev))) {
+					perror ("usb_open");
 					fprintf(stderr, "Warning: matching device found, but cannot open usb device: %s\n", usb_strerror());
 					continue;
 				}
@@ -63,6 +63,7 @@ ErrorCode usbOpen(
 					usb_detach_kernel_driver_np(usbdevice, 0);
 #endif
 					if (usb_claim_interface(usbdevice, 0) != 0) {
+						perror ("usb_claim_interface");
 						usb_close(usbdevice);
 						usbdevice = NULL;
 						fprintf(stderr, "Warning: cannot claim interface: %s\n", usb_strerror());
@@ -87,14 +88,17 @@ ErrorCode usbWrite(
     int bytesRead;
 
     bytesSent = usb_interrupt_write(usbdevice, 0x01, (char*)usbBuf, len, 5000);
-    if (bytesSent < 0)
-        return ERR_USB_WRITE;
+    if (bytesSent < 0) {
+		perror ("usb_interrupt_write");
+		return ERR_USB_WRITE;
+	}
 
     if (read) {
-
         bytesRead = usb_interrupt_read(usbdevice, 0x81, (char*)usbBuf, 64, 5000);
-		if (bytesRead < 0)
+		if (bytesRead < 0) {
+			perror ("usb_interrupt_read");
 			return ERR_USB_READ;
+		}
 	}
 
     return ERR_NONE;
