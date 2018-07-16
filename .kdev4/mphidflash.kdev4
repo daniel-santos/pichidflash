@@ -192,7 +192,7 @@ pattern=.hg
 targets=2
 
 [MakeBuilder]
-Additional Options=-C build
+Additional Options=-C build/x86_64
 
 [Project]
 VersionControlSupport=kdevgit

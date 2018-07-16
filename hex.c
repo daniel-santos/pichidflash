@@ -28,11 +28,13 @@
 
  ****************************************************************************/
 
+#include <stdlib.h>
 #include <stdio.h>
 #include <ctype.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
+#include <errno.h>
 
 #ifndef WIN
 #include <sys/mman.h>
@@ -43,369 +45,348 @@
 #include <sys/stat.h>
 #include "mphidflash.h"
 
-static char          *hexFileData = NULL; /* Memory-mapped hex file data */
-static char          *hexPlusOne;         /* Saves a lot of "+1" math    */
-static int            hexFd;              /* Open hex file descriptor    */
-static size_t         hexFileSize;        /* Save for use by munmap()    */
-static unsigned char  hexBuf[56];         /* Data read/written to USB    */
-extern unsigned char *usbBuf;             /* In usb code                 */
-unsigned char bytesPerAddress = 1;        /* Bytes in flash per address  */
+enum intel_hex_record_types {
+	TYPE_DATA,
+	TYPE_EOF,
+	TYPE_SEG_ADDR_EXT,
+	TYPE_SEG_ADDR_START,
+	TYPE_LINEAR_ADDR_EXT,
+	TYPE_LINEAR_ADDR_START
+};
 
-/****************************************************************************
-Function : hexSetBytesPerAddress
-Description : Sets given byte width
-Parameters : unsigned char Bytes per address
-Returns : Nothing
-****************************************************************************/
-void hexSetBytesPerAddress(unsigned char bytes)
+
+/**
+ * Open and memory-map an Intel hex file.
+ */
+struct hex_file *hex_file_open(char *const name)
 {
-	bytesPerAddress = bytes;
-}
+	struct hex_file *hex;
+	int ret;
+	size_t name_len = strlen(name);
 
-/****************************************************************************
- Function    : hexOpen
- Description : Open and memory-map an Intel hex file.
- Parameters  : char*      Filename (must be non-NULL).
- Returns     : ErrorCode  ERR_NONE     Success
-                          ERR_HEX_OPEN File not found or no read permission
-                          ERR_HEX_STAT fstat() call failed for some reason
-                          ERR_HEX_MMAP Memory-mapping failed
- ****************************************************************************/
-ErrorCode hexOpen(char * const filename)
-{
-	ErrorCode status = ERR_HEX_OPEN;
+	if (!(hex = malloc(sizeof(*hex) + name_len)))
+		return ERR_PTR(-ENOMEM);
 
-	if((hexFd = open(filename, O_RDONLY)) >= 0) {
+	memset(hex, 0, sizeof(*hex));
+	strcpy((char*)hex->name, name);
 
-		struct stat filestat;
+	if ((hex->fd = open(name, O_RDONLY)) < 0) {
+		ret = errno;
+		perror("open");
+		goto exit_free;
+	}
 
-		status = ERR_HEX_STAT;
-		if(!fstat(hexFd, &filestat)) {
+	if (fstat(hex->fd, &hex->stat)) {
+		ret = errno;
+		perror("fstat");
+		goto exit_close;
+	}
 
-			status      = ERR_HEX_MMAP;
-			hexFileSize = filestat.st_size;
+	//hex->size = hex->stat.st_size;
 
 #ifndef WIN
-			if((hexFileData = mmap(0, hexFileSize, PROT_READ,
-					MAP_FILE | MAP_SHARED, hexFd, 0)) != (void *)(-1)) {
-				hexPlusOne = &hexFileData[1];
-				return ERR_NONE;
-			}
+	hex->data = mmap(0, hex->stat.st_size, PROT_READ, MAP_FILE | MAP_SHARED, hex->fd, 0);
+	if(hex->data == MAP_FAILED) {
+		ret = errno;
+		perror("mmap");
+		goto exit_close;
+	}
+	//hex->data_plus_one = &hex->data[1];
 #else
-			HANDLE handle;
-			handle = CreateFileMapping((HANDLE)_get_osfhandle(hexFd),
-									   NULL, PAGE_WRITECOPY, 0, 0, NULL);
-			if (handle != NULL) {
-				hexFileData = MapViewOfFile(handle, FILE_MAP_COPY, 0, 0, hexFileSize);
-				hexPlusOne = &hexFileData[1];
-				CloseHandle(handle);
-				return ERR_NONE;
-			}
+	{
+		HANDLE handle;
+		handle = CreateFileMapping((HANDLE)_get_osfhandle(hex->fd),
+									NULL, PAGE_WRITECOPY, 0, 0, NULL);
+		if (handle == NULL) {
+			ret = errno;
+			perror("CreateFileMapping");
+			goto exit_close;
+		}
+		hex->data = MapViewOfFile(handle, FILE_MAP_COPY, 0, 0, hex->size);
+		hex->data_plus_one = &hex->data[1];
+		CloseHandle(handle);
+		if (!hex->data) {
+			ret = errno;
+			perror("MapViewOfFile");
+			goto exit_close;
+		}
+	}
 #endif
 
-			/* Else clean up and return error code */
-			hexFileData = NULL;
-		}
-		close(hexFd);
-	}
+	return hex;
+	//return status;
+exit_close:
+	close (hex->fd);
 
-	return status;
+exit_free:
+	free (hex);
+	return ERR_PTR(-ret);
 }
 
-/* check memory address & length are in a programmable memory area, as reported by device's Bootloader */
-static int verifyBlockProgrammable( unsigned int *addr, unsigned char *len )
+/**
+ *
+ * @param c a hex digit character
+ * @return The result or a number > 16 if the input was invalid
+ */
+unsigned char parse_hex_digit(unsigned char c)
 {
-	unsigned i, isA, isL, MA, ML;
-	for ( i = 0; i < devQuery.memBlocks; i++ ) {
-		/* only look at programmable memory blocks */
-		if ( !devQuery.mem[ i ].Type )
-			continue;
-
-		/* calc if first or last address is in this block */
-		MA = devQuery.mem[ i ].Address;
-		ML = devQuery.mem[ i ].Length;
-		isA = ( *addr >= MA ) && ( *addr < MA + ML );
-		isL = ( *addr + *len > MA ) && ( *addr + *len <= MA + ML );
-
-		/* loop if neither */
-		if ( !isA && !isL )
-			continue;
-
-		/* both addresses is fine */
-		if ( isA && isL )
-			return 0;
-
-		/* if only start address we adjust length to end of block */
-		if ( isA )
-			*len = ( MA + ML ) - *addr;
-
-		/* if only last address we adjust start to start of block */
-		if ( isL ) {
-			*len = ( *addr + *len ) - MA;
-			*addr = MA;
-		}
-
-		return 0;
-	}
-	return 1;
+	if ((c -= '0') < 10)
+		return c;
+	c -= 'A' - '0';
+	if (c > 5)
+		c -= 'a' - 'A';
+	return c > 5 ? 0xff : c + 10;
 }
 
-/****************************************************************************
- Function    : atoh (inline pseudo-function)
- Description : Converts two adjacent ASCII characters (representing an 8-bit
-               hexadecimal value) to a numeric value.
- Parameters  : int            Index (within global hex array) to start of
-                              input string; must contain at least two chars.
- Returns     : unsigned char  Numeric result; 0 to 255.
- Notes       : Range checking of input characters is somewhat slovenly;
-               all input is assumed to be in the '0' to '9' and 'A' to 'F'
-               range.  But if any such shenanigans were to occur, the line
-               checksum will likely catch it.
- ****************************************************************************/
-#define atoh(pos) \
-  ((((hexFileData[pos] <= '9') ? (hexFileData[pos] - '0') : \
-     (0x0a + toupper(hexFileData[pos]) - 'A')) << 4) |      \
-   ( (hexPlusOne [pos] <= '9') ? (hexPlusOne [pos] - '0') : \
-     (0x0a + toupper(hexPlusOne [pos]) - 'A')      ))
-
-/****************************************************************************
- Function    : issueBlock
- Description : Send data over USB bus to device.
- Parameters  : unsigned int  Destination address on PIC device.
-               char          Byte count (max 56).
-               char          Verify vs. write.
- Returns     : ErrorCode     ERR_NONE on success, or error code as returned
-                             from usbWrite();
- ****************************************************************************/
-static ErrorCode issueBlock(
-	unsigned int  addr,
-	unsigned char len,
-	char          verify)
+/**
+ *
+ * @param str pointer to string of two hex bytes
+ * @param dest destination
+ * @return zero upon success
+ */
+static int parse_hex_byte(const char *str, unsigned char *dest)
 {
-	ErrorCode status;
-
-#ifdef DEBUG
-	printf("Address: %08x  Len %d\n", addr, len);
-#else
-	putchar('.');
-	fflush(stdout);
-#endif
-
-	// check device memory blocks are programmable
-	if (verifyBlockProgrammable(&addr, &len)) {
-#ifdef DEBUG
-		printf("Skip data on address %04x with length %d\n", addr, len);
-#endif
-		return ERR_NONE;
-	}
-	// length must be even
-	if (len & 1) {
-#ifdef DEBUG
-		printf("Add one byte to data on address %04x with length %d\n", addr, len);
-#endif
-		hexBuf[ len++ ] = 0xff;
-	}
-
-	/* Short data packets need flushing */
-	if (len == 0) {
-		DEBUGMSG("Completing");
-		usbBuf[0] = PROGRAM_COMPLETE;
-		status = usbWrite(1, 0);
-		return status;
-	}
-
-	bufWrite32(usbBuf, 1, addr / bytesPerAddress);
-	usbBuf[5] = len;
-
-	if (verify) {
-		DEBUGMSG("Verifying");
-		usbBuf[0] = GET_DATA;
-		if (ERR_NONE == (status = usbWrite(6, 1))) {
-#ifdef DEBUG
-			int i;
-			if (memcmp(&usbBuf[64 - len], hexBuf, len)) {
-				puts("Verify FAIL\nExpected:");
-				printf("NA NA NA NA NA NA NA NA - ");
-				for (i = 0; i < (56 - len); i++)
-					printf("NA ");
-				for (i = 0; i < len; i++)
-					printf("%02x ", hexBuf[i]);
-				putchar('\n');
-				fflush(stdout);
-				return ERR_VERIFY;
-			} else {
-				puts("Verify OK");
-				return ERR_NONE;
-			}
-#else
-			return (memcmp(&usbBuf[64 - len], hexBuf, len) ?
-					ERR_VERIFY : ERR_NONE);
-#endif
-
-		}
-	} else {
-		DEBUGMSG("Writing");
-		usbBuf[0] = PROGRAM_DEVICE;
-		/* Regardless of actual byte count, data packet is always
-		   64 bytes.  Following the header, the bootloader wants the
-		   data portion 'right justified' within packet.  Odd. */
-		memcpy(&usbBuf[64 - len], hexBuf, len);
-		if ((ERR_NONE == (status = usbWrite(64, 0))) && (len < 56)) {
-			/* Short data packets need flushing */
-			DEBUGMSG("Completing");
-			usbBuf[0] = PROGRAM_COMPLETE;
-			status    = usbWrite(1, 0);
-		}
-	}
-
-#ifdef DEBUG
-	if (status != ERR_NONE)
-		puts("ERROR");
-#endif
-
-	return status;
+	unsigned char nibble[2];
+	if ((nibble[0] = parse_hex_digit(str[0])) & 0xf0)
+		return 1;
+	if ((nibble[1] = parse_hex_digit(str[1])) & 0xf0)
+		return 1;
+	*dest = nibble[0] << 4 | nibble[1];
+	return 0;
 }
 
-/****************************************************************************
- Function    : hexWrite
- Description : Writes (and optionally verifies) currently-open hex file to
-               device.
- Parameters  : char       Verify (1) vs. write (0).
- Returns     : ErrorCode  ERR_NONE on success, else various other values as
-                          defined in mphidflash.h.
- Notes       : USB device and hex file are both assumed already open and
-               valid; no checks performed here.
- ****************************************************************************/
-ErrorCode hexWrite(const char verify)
+const char *const pass_names[PASS_COUNT]  = {
+	"Validating", "Writing", "Verifying"
+};
+
+static void show_diff(uint32_t addr, unsigned size, const uint8_t *a,
+					  const uint8_t *b)
 {
-	char         *ptr, pass;
-	ErrorCode     status;
-	int           checksum, i, end, offset;
-	short         bufLen;
-	unsigned int  len, type, addrHi, addrLo, addr32, addrSave;
+	unsigned i, j, col;
+	unsigned cols = 8;
+	const uint8_t *ab[2] = {a, b};
 
-	for (pass = 0; pass <= verify; pass++) {
-		offset   = 0; /* Start at beginning of hex file         */
-		bufLen   = 0; /* Hex buffer initially empty             */
-		addrHi   = 0; /* Initial address high bits              */
-		addrSave = 0; /* PIC start addr for hex buffer contents */
-		addr32   = 0;
-
-		if (pass)printf("\nVerifying:");
-
-		for (;;) { /* Each line in file */
-
-			/* Line start contains length, 16-bit address and type */
-			if (3 != sscanf(&hexFileData[offset], ":%02x%04x%02x",
-							&len, &addrLo, &type)) return ERR_HEX_SYNTAX;
-
-			/* Position of %02x checksum at end of line */
-			end = offset + 9 + len * 2;
-
-			/* Verify checksum on first (write) pass */
-			if (!pass) {
-				for (checksum = 0, i = offset + 1; i < end;
-						checksum = (checksum + (0x100 - atoh(i))) & 0xff, i += 2);
-				if (atoh(end) != checksum) return ERR_HEX_CHECKSUM;
+	for (i = 0; i < size; i += cols) {
+		fprintf(stderr, "%04x:  ", addr + i);
+		for (j = 0; j < 2; ++j) {
+			for (col = 0; col < cols; ++col) {
+				if (i + col < size)
+					fprintf(stderr, "%02x ", ab[j][i + col]);
+				else
+					fputs("   ", stderr);
 			}
+			if (j == 0)
+				fputs(" |  ", stderr);
+		}
+		fputs("\n", stderr);
+	}
+}
 
-			/* Process different hex record types.  Using if/else rather
-			   than a switch in order to better handle EOF cases (allows
-			   simple 'break' rather than goto or other nasties). */
+enum hex_record_sections {
+	HEX_SECTION_START,
+	HEX_SECTION_BYTE_COUNT,
+	HEX_SECTION_ADDR,
+	HEX_SECTION_REC_TYPE,
+	HEX_SECTION_DATA,
+	HEX_SECTION_CHECKSUM,
 
-			if (0 == type) { /* Data record */
+	HEX_SECTION_COUNT
+};
 
-				/* If new record address is not contiguous with prior record,
-				   issue accumulated hex data (if any) and start anew. */
-				if ((addrHi + addrLo) != addr32) {
-					addr32 = addrHi + addrLo;
-					if (bufLen) {
-						if (ERR_NONE != (status = issueBlock(addrSave, bufLen, pass)))
-							return status;
-						bufLen = 0;
-					}
-					addrSave = addr32;
-				}
+const char *ansi_colors[HEX_SECTION_COUNT] = {
+	"\x1b[48;2;255;255;204m",
+	"\x1b[48;2;204;255;204m",
+	"\x1b[48;2;204;204;255m",
+	"\x1b[48;2;255;204;204m",
+	"\x1b[48;2;204;255;255m",
+	"\x1b[48;2;204;204;204m",
+};
+const char *ansi_forground_blk = "\x1b[38;2;0;0;0m";
+const char *ansi_reset = "\x1b[0m";
 
-				/* Parse bytes from line into hexBuf */
-				for (i = offset + 9; i < end; i += 2) {
-					hexBuf[bufLen++] = atoh(i); /* Add to hex buffer */
-					/* If buffer is full, issue block and start anew */
-					if (sizeof(hexBuf) == bufLen) {
-						if (ERR_NONE != (status = issueBlock(addrSave, bufLen, pass)))
-							return status;
-						bufLen = 0;
-					}
+int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl, enum hex_file_passes pass)
+{
+	unsigned col;
+	struct hex_record r;
+	unsigned size;
+	unsigned checksum;
+	unsigned i;
+	int ret;
+    struct parse_state state = {0, 0, 0, 0};
+	const char *p = hex->data;
+    const char *const end = hex->data + hex->stat.st_size;
+	const char *line_start;
+#ifdef DEBUG
+	char data_fmt[8];
+#endif
+	const char *line_end;
 
-					/* Increment address, wraparound as per hexfile spec */
-					if (0xffffffff == addr32) {
-						/* Wraparound.  If any hex data, issue and start anew. */
-						if (bufLen) {
-							if (ERR_NONE !=
-									(status = issueBlock(addrSave, bufLen, pass)))
-								return status;
-							bufLen = 0;
-						}
-						addr32 = 0;
-					} else {
-						addr32++;
-					}
+	//printf("\n%s:", pass_names[pass]);
 
-					/* If issueBlock() used, save new address for next block */
-					if (!bufLen) addrSave = addr32;
-				}
+	for (state.line = 0; p < end; ++state.line) { /* Each line in file */
+		line_start = p;
+		if (*(p++) != ':') {
+			err("malformed start of line\n");
+			goto bad_hex;
+		}
 
-			} else if (1 == type) { /* EOF record */
+		/* Parse hex pairs into record buffer */
+		r.addr = 0;
+		r.rec_size = 0;
+		for (col = 0; col < 260 && p + 1 < end; ++col) {
+			if (*p == '\n' || *p == '\r')
 				break;
-			} else if (4 == type) { /* Extended linear address record */
+			if (parse_hex_byte(p, r.bytes + col)) {
+				err("malformed\n");
+				goto bad_hex;
+			}
+			p += 2;
+		}
+		r.addr = be16_to_cpu(r.addr_be16);
+		r.rec_size = (line_end = p) - line_start - 1;
 
-				if (1 != sscanf(&hexFileData[offset + 9], "%04x", &addrHi))
-					return ERR_HEX_SYNTAX;
-				addrHi <<= 16;
-				addr32 = addrHi;
-				/* Assume this means a noncontiguous address jump; issue block
-				   and start anew.  The prior noncontiguous address code should
-				   already have this covered, but in the freak case of an
-				   extended address record with no subsequent data, make sure
-				   the last of the data is issued. */
-				if (bufLen) {
-					if (ERR_NONE != (status = issueBlock(addrSave, bufLen, pass)))
-						return status;
-					bufLen   = 0;
+#ifdef DEBUG
+		{
+			unsigned data_len = line_end - line_start - 11;
+			if (data_len > 255)
+				data_len = 255;
+			fprintf(stderr, "%s", ansi_forground_blk);
+			fprintf(stderr, "%s%c%s%.2s%s%.4s%s%.2s%s",
+							ansi_colors[HEX_SECTION_START],
+							line_start[0],
+							ansi_colors[HEX_SECTION_BYTE_COUNT],
+							line_start + 1,
+							ansi_colors[HEX_SECTION_ADDR],
+							line_start + 3,
+							ansi_colors[HEX_SECTION_REC_TYPE],
+							line_start + 7,
+							ansi_colors[HEX_SECTION_DATA]);
+
+
+			snprintf(data_fmt, sizeof(data_fmt), "%%.%us", data_len);
+			fprintf(stderr, data_fmt, line_start + 9);
+			fprintf(stderr, "%s%.2s%s\n",
+							ansi_colors[HEX_SECTION_CHECKSUM],
+							line_end - 2,
+							ansi_reset);
+		}
+#endif
+
+
+		if (col == 260) {
+			err("malformed: record too long\n");
+			goto bad_hex;
+		}
+
+		size = col;
+
+		if (size < 5) {
+			err("malformed: line not long enough\n");
+			goto bad_hex;
+		}
+
+		if (r.size != size - 5) {
+			err("malformed: byte count doesn't match record size.\n");
+			goto bad_hex;
+		}
+
+		/* Checksum is twos compliment of the sum of all bytes, so just adding them
+		 * all together should give a zero in the least significant byte. */
+		for (checksum = 0, i = 0; i < size; ++i)
+			checksum += r.bytes[i];
+
+		if (checksum & 0xff) {
+			err("checksum mismatch\n");
+			goto bad_hex;
+		}
+
+		switch (r.type) {
+		case TYPE_DATA:
+			if (pass != PASS_VERIFY) {
+				if ((ret = bl_write_data(bl, &state, &r, pass == PASS_VALIDATE))) {
+					err("Failure at line %u of %s\n", state.line, hex->name);
+					return -1;
 				}
-				addrSave = addr32;
+			} else {
+				const void *data;
+				uint32_t addr = state.addr_hi + r.addr;
+				if (IS_ERR(data = bl_get_data(bl, addr, r.size))) {
+					int err = -PTR_ERR(data);
+					if (err == EAGAIN) {
+						info("Skipping validation of configuration...\n");
+						break;
+					} else if (err == EPERM) {
+						err("Cannot change configuration without --unlock.\n");
+						return EPERM;
+					} else {
+						err("Failed to verify due to command failure.\n");
+						return err;
+					}
+				}
+				if (memcmp(r.data, data, r.size)) {
+					err("Verification failure for record at line %u, addr "
+						"0x%08x\n", state.line, addr);
+					show_diff(addr, r.size, r.data, data);
+					return -1;
+				}
+			}
+			break;
 
-			} else if (5 == type) { /* Start address */
-				/* Ignore */
-			} else { /* Unsupported record type */
-				return ERR_HEX_RECORD;
+		case TYPE_EOF:
+			goto done;
+
+		case TYPE_SEG_ADDR_EXT:
+		case TYPE_SEG_ADDR_START:
+			err("Segment Addresses in hex file are not supported by any PIC "
+				"architecture.\n");
+			goto bad_hex;
+
+		case TYPE_LINEAR_ADDR_EXT:
+			if (r.size != 2) {
+				err("Extended Linear Address record has wrong size.\n");
+				goto bad_hex;
 			}
 
-			/* Advance to start of next line (skip CR/LF/etc.), unless EOF */
-			if (NULL == (ptr = strchr(&hexFileData[end + 2], ':'))) break;
+			state.addr_hi = be16_to_cpu(*(uint32_t*)(r.data)) << 16;
+			state.addr = state.addr_hi;
 
-			offset = ptr - hexFileData;
+			if (pass != PASS_VERIFY) {
+				/* Assume this means a noncontiguous address jump; issue block
+				 * and start anew.  The prior noncontiguous address code should
+				 * already have this covered, but in the freak case of an
+				 * extended address record with no subsequent data, make sure
+				 * the last of the data is issued.  */
+				if ((ret = bl_program_complete(bl, pass == PASS_VALIDATE)))
+					return ret;
+			}
+			break;
+
+		case TYPE_LINEAR_ADDR_START:
+			err("Start Linear Address not supported by PIC architecture.\n");
+			goto bad_hex;
 		}
 
-		/* At end of file, issue any residual data (counters reset at top) */
-		if (bufLen &&
-				(ERR_NONE != (status = issueBlock(addrSave, bufLen, pass))))
-			return status;
+		/* Advance to start of next line (skip CR/LF/etc.), unless EOF */
+		for (; p < end && isspace(*p); ++p);
 
-		/* Make sure last data is flushed (issueBlock() does this
-		   automatically if less than 56 bytes...but if the last packet
-		   is exactly this size, an explicit flush is done here). */
-		if (!pass && (bufLen == 56)) {
-			DEBUGMSG("Completing");
-			usbBuf[0] = PROGRAM_COMPLETE;
-			if (ERR_NONE != (status = usbWrite(1, 0))) return status;
+		if (p == end) {
+			err("Unexpected end of file %s\n", hex->name);
+			goto bad_hex;
 		}
-#ifdef DEBUG
-		printf("PASS %d of %d COMPLETE\n", pass, verify);
-#endif
 	}
+done:
 
-	return ERR_NONE;
+	/* Flush buffers and commit any final writes. */
+	if (pass != PASS_VERIFY) {
+		if ((ret = bl_program_complete(bl, pass == PASS_VALIDATE)))
+			return ret;
+	}
+	return 0;
+
+bad_hex:
+	fail("bad format: line %u, col %u in file %s\n", state.line, col + 1,
+		  hex->name);
+	return -1;
 }
 
 /****************************************************************************
@@ -416,14 +397,15 @@ ErrorCode hexWrite(const char verify)
  Notes       : File is assumed to have already been successfully opened
                by the time this function is called; no checks performed here.
  ****************************************************************************/
-void hexClose(void)
+void hex_close(struct hex_file *hex)
 {
 #ifndef WIN
-	munmap(hexFileData, hexFileSize);
+	munmap((void*)hex->data, hex->stat.st_size);
 #else
-	UnmapViewOfFile(hexFileData);
+	UnmapViewOfFile(hex->data);
 #endif
-	hexFileData = NULL;
-	close(hexFd);
+	hex->data = NULL;
+	close(hex->fd);
+	free(hex);
 }
 
