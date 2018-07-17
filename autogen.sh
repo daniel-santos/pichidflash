@@ -24,7 +24,7 @@ rm -f $(find ${auxdir} m4 -type l 2>/dev/null)
 rmdir ${auxdir} m4 2>/dev/null
 
 if [[ "$1" == clean ]]; then
-	exit 0
+    exit 0
 fi
 
 mkdir ${auxdir} m4 2>/dev/null
