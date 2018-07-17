@@ -209,7 +209,7 @@ const char *ansi_colors[HEX_SECTION_COUNT] = {
 const char *ansi_forground_blk = "\x1b[38;2;0;0;0m";
 const char *ansi_reset = "\x1b[0m";
 
-static void hex_record_print(const char *line_end, const char *line_start)
+static inline void hex_record_print(const char *line_end, const char *line_start)
 {
     char data_fmt[8];
     unsigned data_len = line_end - line_start - 11;
@@ -239,7 +239,7 @@ static void hex_record_print(const char *line_end, const char *line_start)
 }
 
 int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl, enum hex_file_passes pass) {
-    unsigned col;
+    unsigned col = 0;
     struct hex_record r;
     unsigned size;
     unsigned checksum;

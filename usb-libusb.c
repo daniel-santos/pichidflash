@@ -173,7 +173,7 @@ static void packet_to_remote_endianness(struct pic_usb_hid_packet *p) {
     }
 #endif
 
-static void pic_usb_hid_packet_dump(const struct pic_usb_hid_packet *p, bool is_out) {
+static inline void pic_usb_hid_packet_dump(const struct pic_usb_hid_packet *p, bool is_out) {
     unsigned i;
     switch (p->cmd) {
     case CMD_QUERY_DEVICE:

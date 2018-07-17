@@ -5,8 +5,8 @@ CFLAGS += -Wall -Wextra -Wno-unused-parameter -Werror
 LIBUSB_LIBS ?= -lusb
 
 bin_PROGRAMS = picus_behid
-mphidflash_SOURCES = main.c hex.c usb-libusb.c
-mphidflash_include_HEADERS = mphidflash.h
-mphidflash_includedir = .
-mphidflash_CFLAGS = $(LIBUSB_CFLAGS)
-mphidflash_LDADD = $(LIBUSB_LIBS)
+picus_behid_SOURCES = main.c hex.c usb-libusb.c
+picus_behid_include_HEADERS = mphidflash.h
+picus_behid_includedir = .
+picus_behid_CFLAGS = $(LIBUSB_CFLAGS)
+picus_behid_LDADD = $(LIBUSB_LIBS)
