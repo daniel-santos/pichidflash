@@ -37,7 +37,7 @@
 #include <usb.h>
 #include <errno.h>
 #include <assert.h>
- #include <stddef.h>
+#include <stddef.h>
 
 #include "mphidflash.h"
 
@@ -94,8 +94,27 @@ enum bl_commands {
      * Used by host PC app to get additional info about the device, beyond the
      * basic NVM layout provided by the query device command
      */
-    CMD_QUERY_EXTENDED_INFO = 0x0C
+    CMD_QUERY_EXTENDED_INFO = 0x0C,
+
+    CMD_MAX
 };
+
+const char *const cmd_names[CMD_MAX] = {
+    NULL,
+    NULL,
+    "CMD_QUERY_DEVICE",
+    "CMD_UNLOCK_CONFIG",
+    "CMD_ERASE_DEVICE",
+    "CMD_PROGRAM_DEVICE",
+    "CMD_PROGRAM_COMPLETE",
+    "CMD_GET_DATA",
+    "CMD_RESET_DEVICE",
+    "CMD_SIGN_FLASH",
+    NULL,
+    NULL,
+    "CMD_QUERY_EXTENDED_INFO",
+};
+
 
 /* Sub-commands for the ERASE_DEVICE command */
 #define UNLOCKCONFIG      0x00
@@ -175,7 +194,18 @@ static void packet_to_remote_endianness(struct pic_usb_hid_packet *p) {
 
 static inline void pic_usb_hid_packet_dump(const struct pic_usb_hid_packet *p, bool is_out) {
     unsigned i;
-    switch (p->cmd) {
+    uint8_t cmd = p->cmd;
+
+    fprintf(stderr, "URB %s = {\n"
+            "  Command ",
+            is_out ? "OUT" : "IN");
+
+    if (cmd < CMD_MAX && cmd_names[cmd])
+        fprintf(stderr, "%s\n", cmd_names[cmd]);
+    else
+        fprintf(stderr, "0x%02x\n", cmd);
+
+    switch (cmd) {
     case CMD_QUERY_DEVICE:
     case CMD_UNLOCK_CONFIG:
     case CMD_ERASE_DEVICE:
@@ -183,14 +213,11 @@ static inline void pic_usb_hid_packet_dump(const struct pic_usb_hid_packet *p, b
 
     case CMD_GET_DATA:
     case CMD_PROGRAM_DEVICE:
-        fprintf(stderr, "======== URB %s ========\n", is_out ? "OUT" : "IN");
-        fprintf(stderr, "p = {\n"
-                "  Command %02x\n"
+        fprintf(stderr,
                 "  Address %08x\n"
                 "  Size    %02x\n"
                 "  Data    = {\n"
                 "    %04x:                    ",
-                p->cmd,
                 p->data.Address,
                 p->data.Size,
                 0);
@@ -201,7 +228,7 @@ static inline void pic_usb_hid_packet_dump(const struct pic_usb_hid_packet *p, b
                 fprintf(stderr, "\n    %04zx:  ", off);
             fprintf(stderr, "%02x ", p->data.Data[i]);
         }
-        fprintf(stderr, "\n  }\n}\n");
+        fprintf(stderr, "\n  }\n");
         break;
 
     case CMD_PROGRAM_COMPLETE:
@@ -210,24 +237,21 @@ static inline void pic_usb_hid_packet_dump(const struct pic_usb_hid_packet *p, b
     case CMD_QUERY_EXTENDED_INFO:
         break;
     }
+    fprintf(stderr, "}\n");
 }
 
 
 /**
  *
  */
-struct usb_hid_bootloader *bl_open(const unsigned short vendorID,
-                                   const unsigned short productID) {
+static struct usb_dev_handle *find_and_open_usb(void) {
     struct usb_bus      *bus;
     struct usb_device   *dev;
-    struct usb_hid_bootloader *bl;
+    struct usb_device   *match = NULL;
+    usb_dev_handle *h;
     int ret = 0;
-
-    bl = malloc(sizeof(*bl));
-    if (!bl)
-        return ERR_PTR(-ENOMEM);
-    memset(bl, 0, sizeof(*bl));
-    bl->ignore_config = true;
+    const struct options *opts = get_opts();
+    bool too_many = false;
 
     usb_init();
     if ((ret = usb_find_busses()) < 0) {
@@ -235,6 +259,7 @@ struct usb_hid_bootloader *bl_open(const unsigned short vendorID,
         perror("usb_find_busses");
         return ERR_PTR(ret);
     }
+
     if ((ret = usb_find_devices()) < 0) {
         errno = -ret;
         perror("usb_find_devices");
@@ -242,44 +267,79 @@ struct usb_hid_bootloader *bl_open(const unsigned short vendorID,
     }
 
     for (bus = usb_get_busses(); bus; bus = bus->next) {
+        if (opts->have_bus && bus->location != opts->bus)
+            continue;
+
         for (dev = bus->devices; dev; dev = dev->next) {
-            if (dev->descriptor.idVendor == vendorID
-                    && dev->descriptor.idProduct == productID) {
+            if (opts->have_devnum && dev->devnum != opts->devnum)
+                continue;
 
-                if (!(bl->h = usb_open(dev))) {
-                    ret = -errno;
-                    perror("usb_open");
-                    fprintf(stderr, "Warning: matching device found, but "
-                            "cannot open usb device: %s\n", usb_strerror());
-                    continue;
+            if (opts->have_vid && dev->descriptor.idVendor != opts->idVendor)
+                continue;
+
+            if (opts->have_pid && dev->descriptor.idProduct != opts->idProduct)
+                continue;
+
+            if (match) {
+                if (!too_many) {
+                    too_many = true;
+                    fprintf(stderr, "More than one match found.  Use one of the following to select the device\n");
+                    fprintf(stderr, "        -s %u:%hhu\n", (int)match->bus->location, match->devnum);
                 }
-
-                if (usb_claim_interface(bl->h, 0)) {
-#ifdef LIBUSB_HAS_DETACH_KERNEL_DRIVER_NP
-                    usb_detach_kernel_driver_np(bl->h, 0);
-#endif
-                    if ((ret = usb_claim_interface(bl->h, 0))) {
-                        errno = -ret;
-                        perror("usb_claim_interface");
-                        usb_close(bl->h);
-                        bl->h = NULL;
-                        fprintf(stderr, "Warning: cannot claim interface: %s\n",
-                                usb_strerror());
-                        /* FIXME: UGLY AS SIN.  We should specify a device and
-                         * either claim it or fail, not keep trying other devices. */
-                        continue;
-                    }
-                }
-
-                return bl;
+                fprintf(stderr, "        -s %u:%hhu\n", (int)bus->location, dev->devnum);
             }
         }
     }
 
-    err("USB HID Bootloader device with vid:pid %04hx:%04hx not found.\n",
-        vendorID, productID);
+    if (too_many)
+        return ERR_PTR(-ENODEV);
 
-    return ERR_PTR(-ENODEV);
+    if (!match) {
+        err("USB HID Bootloader device with vid:pid %%04hx:%%04hx not found ----- UPDATE ME.\n");
+        return ERR_PTR(-ENODEV);
+    }
+
+    if (!(h = usb_open(dev))) {
+        ret = -errno;
+        perror("usb_open");
+        err("Warning: matching device found, but " "cannot open usb device: %s\n", usb_strerror());
+    }
+
+    if ((ret = usb_claim_interface(h, 0))) {
+#ifdef LIBUSB_HAS_DETACH_KERNEL_DRIVER_NP
+        if (ret == -EBUSY) {
+            usb_detach_kernel_driver_np(h, 0);
+            if (!(ret = usb_claim_interface(h, 0)))
+                return h;
+        }
+#endif
+        errno = -ret;
+        perror("usb_claim_interface");
+        usb_close(h);
+        err("Failed to claim interface: %s\n", usb_strerror());
+        return ERR_PTR(-ENODEV);
+    }
+
+    return h;
+}
+
+struct usb_hid_bootloader *bl_open(void) {
+    struct usb_hid_bootloader *bl;
+    usb_dev_handle *h;
+
+    if (IS_ERR(h = find_and_open_usb()))
+        return (struct usb_hid_bootloader *)h;
+
+    bl = malloc(sizeof(*bl));
+    if (!bl)
+        return ERR_PTR(-ENOMEM);
+    memset(bl, 0, sizeof(*bl));
+    bl->h = h;
+
+/* FIXME */
+    bl->ignore_config = true;
+
+    return bl;
 }
 
 static int bl_submit(struct usb_hid_bootloader *bl, const unsigned char len,
@@ -288,7 +348,7 @@ static int bl_submit(struct usb_hid_bootloader *bl, const unsigned char len,
     int ret;
 
 #ifdef DEBUG
-    if (0)
+    if (1)
         pic_usb_hid_packet_dump(&bl->buf, true);
 #endif
     packet_to_remote_endianness(&bl->buf);
@@ -310,7 +370,7 @@ static int bl_submit(struct usb_hid_bootloader *bl, const unsigned char len,
         }
         packet_to_host_endianness(&bl->buf);
 #ifdef DEBUG
-        if (0)
+        if (1)
             pic_usb_hid_packet_dump(&bl->buf, false);
 #endif
     } else
@@ -332,10 +392,10 @@ int bl_query(struct usb_hid_bootloader *bl) {
     memcpy(&bl->info, &bl->buf.info, sizeof(bl->info));
 
     /* Count memory regions and init mem map. */
-    for (i = 0; bl->info.mem[i].Type != MEMORY_REGION_END; ++i) {
+    for (i = 0; bl->info.mem[i].Type != MEM_REGION_END; ++i) {
         struct memory_region *mem = bl->mem + i;
 
-        if (bl->info.mem[i].Type == MEMORY_REGION_PROGRAM_MEM)
+        if (bl->info.mem[i].Type == MEM_REGION_PROGRAM_MEM)
             bl->free_program_memory = bl->info.mem[i].Length;
         mem->type  = bl->info.mem[i].Type;
         mem->start = bl->info.mem[i].Address;
@@ -394,12 +454,29 @@ int bl_erase(struct usb_hid_bootloader *bl) {
 
 static int bl_flush(struct usb_hid_bootloader *bl, bool simulate_only) {
     int ret;
-    int offset = (int)bl->info.PacketDataFieldSize - (int)bl->buf.data.Size;
+    int offset;
     //uint32_t addr_next;
 
     if (!bl->dirty)
         return 0;
 
+    /* Stupid crap:
+     *
+     * For some dumb reason they want even numbers of bytes only.  This will
+     * force us to write a Stupid Byte(TM)(patent pending), which will force
+     * a PROGRAM_COMPLETE command prior to any other writes.
+     */
+    if (bl->buf.data.Size & 1) {
+        warn("Writing Stupid Byte(TM) at address 0x%08x because record "
+             "contained uneven number\nof bytes (%u), of which the PIC USB HID "
+             "is not fond.\n", bl->buf.data.Address, bl->buf.data.Size);
+        bl->buf.data.Data[bl->buf.data.Size++] = PIC_ERASE_VALUE;
+        bl->stupid_byte_written = true;
+        bl->next_addr = (uint32_t) - 1;
+    } else
+        bl->next_addr = bl->buf.data.Address + bl->buf.data.Size;
+
+    offset = (int)bl->info.PacketDataFieldSize - (int)bl->buf.data.Size;
     assert(offset >= 0);
 
     /* Regardless of actual byte count, data packet is always 64 bytes.
@@ -418,22 +495,6 @@ static int bl_flush(struct usb_hid_bootloader *bl, bool simulate_only) {
         		bl->buf.data.Size);
         */
     }
-
-    /* Stupid crap:
-     *
-     * For some dumb reason they want even numbers of bytes only.  This will
-     * force us to write a Stupid Byte(TM)(patent pending), which will force
-     * a PROGRAM_COMPLETE command prior to any other writes.
-     */
-    if (bl->buf.data.Size & 1) {
-        warn("Writing Stupid Byte(TM) at address 0x%08x because record "
-             "contained uneven number\nof bytes (%u), of which the PIC USB HID "
-             "is not fond.\n", bl->buf.data.Address, bl->buf.data.Size);
-        bl->buf.data.Data[bl->buf.data.Size++] = PIC_ERASE_VALUE;
-        bl->stupid_byte_written = true;
-        bl->next_addr = (uint32_t) - 1;
-    } else
-        bl->next_addr = bl->buf.data.Address + bl->buf.data.Size;
 
     if (bl->info.BytesPerAddress > 1)
         bl->buf.data.Address /= bl->info.BytesPerAddress;
@@ -496,7 +557,7 @@ int bl_write_data(struct usb_hid_bootloader *bl, struct parse_state *state,
             "0x%08x, length = %u\n", addr, r->size);
         return EINVAL;
     }
-    if (type == MEMORY_REGION_CONFIG) {
+    if (type == MEM_REGION_CONFIG) {
         if (bl->ignore_config) {
             warn("skipping config...\n");
             return 0;
@@ -572,7 +633,7 @@ const void *bl_get_data(struct usb_hid_bootloader *bl, uint32_t addr,
         err("Memory region invalid. addr = 0x%08x, size = %u\n", addr, size);
         return ERR_PTR(-EINVAL);
     }
-    if (type == MEMORY_REGION_CONFIG) {
+    if (type == MEM_REGION_CONFIG) {
         if (bl->ignore_config) {
             return ERR_PTR(-EAGAIN);
         }

@@ -47,59 +47,63 @@
 #include "mphidflash.h"
 #include "config.h"
 
-unsigned short vendorID  = 0x04d8;
-unsigned short productID = 0x003c;
+#define DEFAULT_VENDOR_ID   0x04d8
+#define DEFAULT_PRODUCT_ID  0x003c
 
-/* Program's actions aren't necessarily performed in command-line order.
- * Bit flags keep track of options set or cleared during input parsing,
- * then are singularly checked as actions are performed.  Some actions
- * (such as writing) don't have corresponding bits here; certain non-NULL
- * string values indicate such actions should occur. */
-enum actions {
-    ACTION_UNLOCK = 1 << 0,
-    ACTION_ERASE  = 1 << 1,
-    ACTION_VERIFY = 1 << 2,
-    ACTION_SIGN   = 1 << 3,
-    ACTION_RESET  = 1 << 4,
-    ACTION_WRITE_CONFIG = 1 << 5, /* HACK */
+//VERSION
+
+static struct options opts = {
+    .file_name  = NULL,
+    .idVendor   = DEFAULT_VENDOR_ID,
+    .idProduct  = DEFAULT_PRODUCT_ID,
+    .bus        = 0,
+    .devnum     = 0,
+    .actions    = 0,
+    .opts       = 0
 };
+
+const struct options *get_opts(void)
+{
+    return &opts;
+}
 
 static void print_options(const char *argv0)
 {
-fprintf(stderr,
-"%s v%s: a Microchip HID Bootloader utility\n"
-"Option     Description                                      Default\n"
-"-------------------------------------------------------------------------\n"
-"--write, -w <file>                                         None\n"
-"       Write hex file to device (implies --erase)\n"
-"--erase, -e                                                No\n"
-"       Erase device code space.\n"
-"--no-erase, -E                                             Yes\n"
-"       Don't erase device code space.\n"
-"--sign, -s                                                 No\n"
-"       Sign firmware image (recent PIC bootloaders)\n"
-"--reset, -r                                                No\n"
-"       Reset device on program exit.\n"
-"--no-verify, -n                                            On\n"
-"       No verify after write\n"
-"--unlock, -u                                               Locked\n"
-"       Unlock configuration memory before erase/write\n"
-"--vid, -v <hex>                                            %04hx\n"
-"       USB device vendor ID\n"
-"--pid, -p <hex>                                            %04hx\n"
-"       USB device product ID\n"
-"--no-color, -C                                             On\n"
-"       No pretty colors.\n"
-"--help, -h, -?\n"
-"       Help\n", argv0, VERSION, vendorID, productID);
+    fprintf(stderr,
+"%s v" VERSION ": a Microchip PIC USB HID Bootloader utility\n"
+"\n"
+"USAGE\n"
+"    %s <action> [options] [hex_file]\n"
+"\n"
+"action is one of\n"
+"-w, --write     Write hex file to device (implies --erase --verify).\n"
+"-c, --check\n"
+"-e, --erase     Erase program memory.\n"
+"-E, --no-erase  Do not erase (only meaningful with --write).\n"
+"-s, --sign      Sign firmware image (recent PIC bootloaders).\n"
+"-r, --reset     Reset device.\n"
+"-v, --verify    Verify program memory.  When used without --write, will\n"
+"                check if hex file has already been programmed.\n"
+"-V, --no-verify Do not perform verfication (only meaningful with --write)\n"
+"-u, --unlock    Unlock configuration memory before erase/write and allow\n"
+"                hex file to overwrite configuration bytes\n"
+"-v, --vid <hex> USB device vendor ID  (default %04x)\n"
+"-p, --pid <hex> USB device product ID (default %04x)\n"
+"-C, --no-color  No pretty colors.\n"
+"-d, --debug [category[,category]]\n"
+"                Enable debuging.  Optional (additional) catagories are:\n"
+"                    general    \n"
+"                    hex        display hex file as it is parsed\n"
+"                    urbs       display all in and out URBs to the bootloader\n"
+"-h, --help      Help\n", argv0, argv0, DEFAULT_VENDOR_ID, DEFAULT_PRODUCT_ID);
 }
+
 
 int main(int argc, char *argv[]) {
     int ret;
-    char        *hexFile   = NULL,
-                 actions   = ACTION_VERIFY;
     struct hex_file *hex = NULL;
     struct usb_hid_bootloader *bl = NULL;
+
     /* To create a sensible sequence of operations, all command-line
        input is processed prior to taking any actions.  The sequence
        of actions performed may not always directly correspond to the
@@ -126,19 +130,46 @@ int main(int argc, char *argv[]) {
         int c;
         int option_index = 0;
         static struct option long_options[] = {
-            {"write",	required_argument,	0, 'w'},
-            {"erase",	no_argument,		0, 'e'},
-            {"sign",	no_argument,		0, 's'},
-            {"reset",	no_argument,		0, 'r'},
-            {"no-verify", no_argument,		0, 'n'},
-            {"unlock",	no_argument,		0, 'u'},
-            {"vid",		required_argument,	0, 'v'},
-            {"pid",		required_argument,	0, 'p'},
-            {"help",	no_argument,		0, 'h'},
-            {0,			0,					0, 0}
+            {"check",       no_argument,        0, 'c'},
+            {"unlock",      no_argument,        0, 'u'},
+            {"erase",       no_argument,        0, 'e'},
+            {"no-erase",    no_argument,        0, 'E'},
+            {"write",       no_argument,        0, 'w'},
+            {"verify",      no_argument,        0, 'v'},
+            {"no-verify",   no_argument,        0, 'V'},
+            {"sign",        no_argument,        0, 's'},
+            {"reset",       no_argument,        0, 'r'},
+            {"slot",        required_argument,  0, 's'},
+            {"debug",       no_argument,        0, 'd'},
+            {"help",        no_argument,        0, 'h'},
+            {0,             0,                  0, 0}
         };
+struct optiaons {
+    const char *file_name;
+    uint16_t vendorID;
+    uint16_t productID;
+    enum actions actions;
+    union {
+        int opts;
+        struct {
+            int validate:1;
+            int write:1;
+            int erase:1;
+            int no_erase:1;
+            int unlock:1;
+            int no_unlock:1;
+            int verify:1;
+            int no_verify:1;
+            int sign:1;
+            int reset:1;
+            int debug:1;
+            int debug_hex:1;
+            int debug_urbs:1;
+        };
+    };
+};
 
-        c = getopt_long(argc, argv, "w:esrnuv:p:h?", long_options, &option_index);
+        c = getopt_long(argc, argv, "w:esrvVuv:p:h?", long_options, &option_index);
         if (c == -1)
             break;
 
@@ -149,36 +180,42 @@ int main(int argc, char *argv[]) {
             break;
 
         case 'w':
-            hexFile = optarg;
-            /* Intentional fall-through */
+            opts.write = true;
+            opts.file_name = optarg;
             break;
+
         case 'e':
-            actions |= ACTION_ERASE;
+            opts.erase = true;
+            //opts.flags |= ACTION_ERASE;
             break;
 
         case 's':
-            actions |= ACTION_SIGN;
+            opts.sign = true;
+            //opts.flags |= ACTION_SIGN;
             break;
 
         case 'r':
-            actions |= ACTION_RESET;
+            opts.reset = true;
+            //actions |= ACTION_RESET;
             break;
 
         case 'n':
-            actions &= ~ACTION_VERIFY;
+            opts.no_verify = true;
+            //opts.flags &= ~ACTION_VERIFY;
             break;
 
         case 'u':
-            actions |= ACTION_UNLOCK;
+            opts.unlock = true;
+            //opts.flags |= ACTION_UNLOCK;
             break;
 
         case 'v':
-            if (sscanf(optarg, "%hx", &vendorID) != 1)
+            if (sscanf(optarg, "%hx", &opts.idVendor) != 1)
                 fail("Failed to parse -v");
             break;
 
         case 'p':
-            if (sscanf(optarg, "%hx", &productID) != 1)
+            if (sscanf(optarg, "%hx", &opts.idProduct) != 1)
                 fail("Failed to parse -p");
             break;
 
@@ -189,12 +226,12 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (hexFile && !(hex = hex_file_open(hexFile)))
-        fail("Failed to open file %s\n", hexFile);
+    if (opts.file_name && !(hex = hex_file_open(opts.file_name)))
+        fail("Failed to open file %s\n", opts.file_name);
 
     /* After successful command-line parsage, find/open USB device. */
 
-    if (IS_ERR(bl = bl_open(vendorID, productID))) {
+    if (IS_ERR(bl = bl_open())) {
         errno = -PTR_ERR(bl);
         perror("bl_open");
         return -1;
@@ -216,7 +253,7 @@ int main(int argc, char *argv[]) {
         fail("\nHex file validation failed.\n");
     printf("done.\n");
 
-    if (actions & ACTION_UNLOCK) {
+    if (opts.actions & ACTION_UNLOCK) {
         puts("Unlocking configuration memory...");
         if (bl_unlock_config(bl))
             fail("Unlock command failed.\n");
@@ -224,33 +261,33 @@ int main(int argc, char *argv[]) {
         /* Otherwise make sure we don't try to modify it. */
         bl_protect_config(bl);
 
-    if (actions & ACTION_ERASE) {
+    if (opts.actions & ACTION_ERASE) {
         puts("Erasing...");
         if (bl_erase(bl))
             fail("Erase failed");
     }
 
     if (hex) {
-        printf("Writing hex file '%s':", hexFile);
+        printf("Writing hex file '%s':", opts.file_name);
         if (hex_file_write(hex, bl))
             fail("\nFlashing failed.");
         putchar('\n');
     }
 
-    if (hex && (actions & ACTION_VERIFY)) {
+    if (hex && (opts.actions & ACTION_VERIFY)) {
         printf("Verifying...");
         if (hex_file_verify(hex, bl))
             fail("\nVeryfing failed.");
         putchar('\n');
     }
 
-    if (actions & ACTION_SIGN) {
+    if (opts.actions & ACTION_SIGN) {
         puts("Signing image...");
         if (bl_sign(bl))
             fail("Signing failed.");
     }
 
-    if (actions & ACTION_RESET) {
+    if (opts.actions & ACTION_RESET) {
         puts("Resetting device...");
         if (bl_reset(bl))
             fail("Reset failed.\n");

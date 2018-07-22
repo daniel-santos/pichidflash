@@ -40,13 +40,13 @@
 #include <string.h>
 #include <errno.h>
 
+#include <sys/stat.h>
 #ifndef WIN
-#include <sys/mman.h>
+# include <sys/mman.h>
 #else
-#include <windows.h>
+# include <windows.h>
 #endif
 
-#include <sys/stat.h>
 #include "mphidflash.h"
 
 enum intel_hex_record_types {
@@ -58,10 +58,73 @@ enum intel_hex_record_types {
     TYPE_LINEAR_ADDR_START
 };
 
+enum hex_record_sections {
+    HEX_SECTION_START,
+    HEX_SECTION_BYTE_COUNT,
+    HEX_SECTION_ADDR,
+    HEX_SECTION_REC_TYPE,
+    HEX_SECTION_DATA,
+    HEX_SECTION_CHECKSUM,
+
+    HEX_SECTION_COUNT
+};
+
+static inline void hex_record_print(FILE *out, const char *line_start,
+				    const char *line_end, bool nocolor)
+{
+    char data_fmt[8];
+#ifndef NO_COLOR
+    unsigned data_len = line_end - line_start - 11;
+    /**
+     * Some ANSI colors to make your day bright.
+     */
+    const char *ansi_colors[HEX_SECTION_COUNT] = {
+        "\x1b[48;2;255;255;204m",
+        "\x1b[48;2;204;255;204m",
+        "\x1b[48;2;204;204;255m",
+        "\x1b[48;2;255;204;204m",
+        "\x1b[48;2;204;255;255m",
+        "\x1b[48;2;204;204;204m",
+    };
+    const char *ansi_forground_blk = "\x1b[38;2;0;0;0m";
+    const char *ansi_reset = "\x1b[0m";
+
+    if (!nocolor) {
+        data_len = line_end - line_start - 11;
+        if (data_len > 255)
+            data_len = 255;
+        fprintf(out, "%s", ansi_forground_blk);
+        fprintf(out,
+                "%s%c%s%.2s%s%.4s%s%.2s%s",
+                ansi_colors[HEX_SECTION_START],
+                line_start[0],
+                ansi_colors[HEX_SECTION_BYTE_COUNT],
+                line_start + 1,
+                ansi_colors[HEX_SECTION_ADDR],
+                line_start + 3,
+                ansi_colors[HEX_SECTION_REC_TYPE],
+                line_start + 7,
+                ansi_colors[HEX_SECTION_DATA]);
+
+        snprintf(data_fmt, sizeof(data_fmt), "%%.%us", data_len);
+        fprintf(out, data_fmt, line_start + 9);
+        fprintf(out,
+                "%s%.2s%s\n",
+                ansi_colors[HEX_SECTION_CHECKSUM],
+                line_end - 2,
+                ansi_reset);
+    } else
+#endif /* NO_COLOR */
+    {
+        snprintf(data_fmt, sizeof(data_fmt), "%%.%zus", line_end - line_start);
+        fprintf(out, data_fmt, line_start);
+    }
+}
+
 /**
  * Open and memory-map an Intel hex file.
  */
-struct hex_file *hex_file_open(char *const name)
+struct hex_file *hex_file_open(const char *const name)
 {
     struct hex_file *hex;
     int ret;
@@ -71,6 +134,7 @@ struct hex_file *hex_file_open(char *const name)
         return ERR_PTR(-ENOMEM);
 
     memset(hex, 0, sizeof(*hex));
+    hex->name_len = name_len;
     strcpy((char*)hex->name, name);
 
     if ((hex->fd = open(name, O_RDONLY)) < 0) {
@@ -88,30 +152,29 @@ struct hex_file *hex_file_open(char *const name)
 #ifndef WIN
     hex->data = mmap(0, hex->stat.st_size, PROT_READ, MAP_FILE | MAP_SHARED,
                      hex->fd, 0);
-    if(hex->data == MAP_FAILED) {
+    if (hex->data == MAP_FAILED) {
         ret = errno;
         perror("mmap");
         goto exit_close;
     }
 #else
     {
-        HANDLE handle;
-        handle = CreateFileMapping((HANDLE)_get_osfhandle(hex->fd),
-                                   NULL, PAGE_WRITECOPY, 0, 0, NULL);
-        if (handle == NULL) {
-            ret = errno;
-            perror("CreateFileMapping");
+        HANDLE h = CreateFileMapping((HANDLE)_get_osfhandle(hex->fd),
+                                     NULL, PAGE_WRITECOPY, 0, 0, NULL);
+        if (!h) {
+            err("CreateFileMapping of file %s failed with %u\n", hex->name,
+                GetLastError());
             goto exit_close;
         }
-        hex->data = MapViewOfFile(handle, FILE_MAP_COPY, 0, 0, hex->size);
-        hex->data_plus_one = &hex->data[1];
-        CloseHandle(handle);
+
+        hex->data = MapViewOfFile(h, FILE_MAP_COPY, 0, 0, hex->size);
+        ret = GetLastError();
+        CloseHandle(h);
         if (!hex->data) {
-            ret = errno;
-            perror("MapViewOfFile");
+            err("MapViewOfFile of file %s failed with %u\n", hex->name, ret);
             goto exit_close;
         }
-}
+    }
 #endif
 
     return hex;
@@ -184,72 +247,21 @@ static void show_diff(uint32_t addr, unsigned size, const uint8_t *a,
     }
 }
 
-enum hex_record_sections {
-    HEX_SECTION_START,
-    HEX_SECTION_BYTE_COUNT,
-    HEX_SECTION_ADDR,
-    HEX_SECTION_REC_TYPE,
-    HEX_SECTION_DATA,
-    HEX_SECTION_CHECKSUM,
-
-    HEX_SECTION_COUNT
-};
-
-/**
- * Some ANSI colors to make your day bright.
- */
-const char *ansi_colors[HEX_SECTION_COUNT] = {
-    "\x1b[48;2;255;255;204m",
-    "\x1b[48;2;204;255;204m",
-    "\x1b[48;2;204;204;255m",
-    "\x1b[48;2;255;204;204m",
-    "\x1b[48;2;204;255;255m",
-    "\x1b[48;2;204;204;204m",
-};
-const char *ansi_forground_blk = "\x1b[38;2;0;0;0m";
-const char *ansi_reset = "\x1b[0m";
-
-static inline void hex_record_print(const char *line_end, const char *line_start)
-{
-    char data_fmt[8];
-    unsigned data_len = line_end - line_start - 11;
-
-    if (data_len > 255)
-        data_len = 255;
-    fprintf(stderr, "%s", ansi_forground_blk);
-    fprintf(stderr,
-            "%s%c%s%.2s%s%.4s%s%.2s%s",
-            ansi_colors[HEX_SECTION_START],
-            line_start[0],
-            ansi_colors[HEX_SECTION_BYTE_COUNT],
-            line_start + 1,
-            ansi_colors[HEX_SECTION_ADDR],
-            line_start + 3,
-            ansi_colors[HEX_SECTION_REC_TYPE],
-            line_start + 7,
-            ansi_colors[HEX_SECTION_DATA]);
-
-    snprintf(data_fmt, sizeof(data_fmt), "%%.%us", data_len);
-    fprintf(stderr, data_fmt, line_start + 9);
-    fprintf(stderr,
-            "%s%.2s%s\n",
-            ansi_colors[HEX_SECTION_CHECKSUM],
-            line_end - 2,
-            ansi_reset);
-}
-
-int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl, enum hex_file_passes pass) {
+int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl,
+                   enum hex_file_passes pass) {
     unsigned col = 0;
     struct hex_record r;
     unsigned size;
     unsigned checksum;
     unsigned i;
     int ret;
-    struct parse_state state = {0, 0, 0, 0};
+    struct parse_state state = {PARSE_INVALID_ADDRESS, 0, 0, 0};
     const char *p = hex->data;
     const char *const end = hex->data + hex->stat.st_size;
     const char *line_start;
     const char *line_end;
+
+    fprintf(stderr, "\n\%s hex...\n\n", pass_names[pass]);
 
     /* Each line in file */
     for (state.line = 0; p < end; ++state.line) {
@@ -275,7 +287,7 @@ int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl, enum hex
         r.rec_size = (line_end = p) - line_start - 1;
 
 #ifdef DEBUG
-        hex_record_print(line_start, line_end);
+        hex_record_print(stderr, line_start, line_end, false);
 #endif
 
         if (col == 260) {
@@ -342,7 +354,7 @@ int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl, enum hex
 
         case TYPE_SEG_ADDR_EXT:
         case TYPE_SEG_ADDR_START:
-            err("Segment Addresses in hex file are not supported by any PIC "
+            err("Segment Addresses in hex files are not supported by any PIC "
                 "architecture.\n");
             goto bad_hex;
 
@@ -379,8 +391,8 @@ int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl, enum hex
             goto bad_hex;
         }
     }
-done:
 
+done:
     /* Flush buffers and commit any final writes. */
     if (pass != PASS_VERIFY) {
         if ((ret = bl_program_complete(bl, pass == PASS_VALIDATE)))

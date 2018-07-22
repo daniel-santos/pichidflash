@@ -138,10 +138,88 @@ static inline bool __must_check IS_ERR_OR_NULL(__force const void *ptr)
 #pragma pack(push)
 #pragma pack(1)
 
+/* Program's actions aren't necessarily performed in command-line order.
+ * Bit flags keep track of options set or cleared during input parsing,
+ * then are singularly checked as actions are performed.  Some actions
+ * (such as writing) don't have corresponding bits here; certain non-NULL
+ * string values indicate such actions should occur. */
+enum actions {
+    ACTION_VALIDATE     = 1 << 0,
+    ACTION_UNLOCK       = 1 << 1,
+    ACTION_ERASE        = 1 << 2,
+    ACTION_WRITE        = 1 << 3,
+    ACTION_VERIFY       = 1 << 4,
+    ACTION_SIGN         = 1 << 5,
+    ACTION_RESET        = 1 << 6,
+    ACTION_DEBUG        = 1 << 7,
+    ACTION_DEBUG_HEX    = 1 << 8,
+    ACTION_DEBUG_URBS   = 1 << 9
+};
+
+#define DEFAULT_VENDOR_ID   0x04d8
+#define DEFAULT_PRODUCT_ID  0x003c
+#if 0
+char *a =
+"%s v" VERSION ": a Microchip PIC USB HID Bootloader utility\n"
+"\n"
+"-w, --write <file>\n"
+"                Write hex file to device (implies --erase --verify).\n"
+"-e, --erase     Erase program (non-volatile) memory.\n"
+"-E, --no-erase  Do not erase (only meaningful with --write).\n"
+"-s, --sign      Sign firmware image (recent PIC bootloaders).\n"
+"-r, --reset     Reset device.\n"
+"-v, --verify    Verify program memory.  When used without --write, will\n"
+"                check if hex file has already been programmed.\n"
+"-V, --no-verify Do not perform verfication (only meaningful with --write)\n"
+"-u, --unlock    Unlock configuration memory before erase/write and allow\n"
+"                hex file to overwrite configuration bytes\n"
+"-v, --vid <hex> USB device vendor ID  (default %04hx)\n"
+"-p, --pid <hex> USB device product ID (default %04hx)\n"
+"-C, --no-color  No pretty colors.\n"
+"-d, --debug [category[,category]]\n"
+"                Enable debuging.  Optional (additional) catagories are:\n"
+"                    general    \n"
+"                    hex        display hex file as it is parsed\n"
+"                    urbs       display all in and out URBs to the bootloader\n"
+"-h, --help      Help\n";
+#endif
+
+struct options {
+    const char *file_name;
+    uint16_t idVendor;
+    uint16_t idProduct;
+    uint32_t bus;
+    uint8_t devnum;
+    enum actions actions;
+    union {
+        int opts;
+        struct {
+            int check:1;
+            int unlock:1;
+            int erase:1;
+            int no_erase:1;
+            int write:1;
+            int verify:1;
+            int no_verify:1;
+            int sign:1;
+            int reset:1;
+            int have_bus:1;
+            int have_devnum:1;
+            int have_vid:1;
+            int have_pid:1;
+            int debug:1;
+            int debug_hex:1;
+            int debug_urbs:1;
+        };
+    };
+};
+
+const struct options *get_opts(void);
+
 
 #define USB_PACKET_SIZE             0x40
 #define MAX_REQUEST_DATA_BLOCK_SIZE 0x3a
-#define PIC_ERASE_VALUE				0xff
+#define PIC_ERASE_VALUE             0xff
 
 /** protocol struct copied from bootloader, reformatted and with fixed size types. */
 struct pic_usb_hid_packet {
@@ -218,139 +296,148 @@ struct pic_usb_hid_packet {
  * from any other program that compiles with the Intel HEX standard.
  */
 struct hex_record {
-	/** The address in host cpu endianness */
-	uint16_t addr;
-	uint16_t rec_size;
-	union {
-		uint8_t bytes[259];
-		struct {
-			uint8_t size;
-			uint16_t addr_be16;
-			uint8_t type;
-			uint8_t data[255];
-		};
-	};
+    /** The address in host cpu endianness */
+    uint16_t addr;
+    uint16_t rec_size;
+    union {
+        uint8_t bytes[259];
+        struct {
+            uint8_t size;
+            uint16_t addr_be16;
+            uint8_t type;
+            uint8_t data[255];
+        };
+    };
 };
 
 #pragma pack(pop)
 
-enum memory_region_type {
-	MEMORY_REGION_PROGRAM_MEM   = 0x01,
-	MEMORY_REGION_EEDATA        = 0x02,
-	MEMORY_REGION_CONFIG        = 0x03,
-	MEMORY_REGION_USERID        = 0x04,
-	MEMORY_REGION_END           = 0xFF
+enum mem_region_type {
+    MEM_REGION_PROGRAM_MEM   = 0x01,
+    MEM_REGION_EEDATA        = 0x02,
+    MEM_REGION_CONFIG        = 0x03,
+    MEM_REGION_USERID        = 0x04,
+    MEM_REGION_END           = 0xFF
 };
 
 /**
  * The USB HID Bootloader
  */
 struct usb_hid_bootloader {
-	usb_dev_handle *h;
-	uint8_t have_info:1;	/**< True after successful query. */
+    usb_dev_handle *h;
 
-	/**
-	 * True if there is data waiting to be written in buf.  When true,
-	 * buf.data's Command, Address and Size will be valid.  CMD_PROGRAM_DEVICE
-	 * is the only command that might persist across API bl_* API calls.
-	 */
-	uint8_t dirty:1;
+    /**
+     * True after successful query.
+     */
+    uint8_t have_info:1;
 
-	/**
-	 * True if we have begun writing program data and (eventually) need to send
-	 * CMD_PROGRAM_COMPLETE.  When true, next_addr will be valid. */
-	uint8_t writing:1;
-	uint8_t protect_config:1;
-	uint8_t stupid_byte_written:1;
-	uint8_t ignore_config:1;
+    /**
+     * True if there is data waiting to be written in buf.  When true,
+     * buf.data's Command, Address and Size will be valid.  CMD_PROGRAM_DEVICE
+     * is the only command that might persist across API bl_* API calls.
+     */
+    uint8_t dirty:1;
 
-	struct pic_info info;
-	//uint8_t bytes_per_addr;
-	uint32_t free_program_memory;
-	unsigned mem_region_count;
-	struct memory_region {
-		uint32_t start;
-		uint32_t end;
-		uint8_t type;
-	} mem[6];
+    /**
+     * True if we have begun writing program data and (eventually) need to send
+     * CMD_PROGRAM_COMPLETE.  When true, next_addr will be valid.
+     */
+    uint8_t writing:1;
+    uint8_t protect_config:1;
+    uint8_t stupid_byte_written:1;
+    uint8_t ignore_config:1;
 
-	struct pic_usb_hid_packet buf;
-	char data_buf[MAX_REQUEST_DATA_BLOCK_SIZE];
+    struct pic_info info;
+    uint32_t free_program_memory;
+    unsigned mem_region_count;
+    struct memory_region {
+        uint32_t start;
+        uint32_t end;
+        uint8_t type;
+    } mem[6];
 
-	/**
-	 * Valid only when `writing' is set.  This is the next address to write to
-	 * for a contiguous write.  If a write is made to any other address, we
-	 * have to flush and issue a PROGRAM_COMPLETE first.  */
-	uint32_t next_addr;
-    //uint32_t addr_hi;
+    struct pic_usb_hid_packet buf;
+    char data_buf[MAX_REQUEST_DATA_BLOCK_SIZE];
+
+    /**
+     * Valid only when `writing' is set.  This is the next address to write to
+     * for a contiguous write.  If a write is made to any other address, we
+     * have to flush and issue a PROGRAM_COMPLETE first.
+     */
+    uint32_t next_addr;     /* FIXME: This should probably be in struct parse_state */
 };
 
 /* An Intel HEX file. */
 struct hex_file {
-	int fd;
-	struct stat stat;
-	const char *data;
-	//unsigned char buf[58];
-	size_t name_len;	/* size w/o null-terminator */
-	const char name[1];
+    int fd;
+    struct stat stat;
+    const char *data;       /**< mmapped file contents. */
+    size_t name_len;        /**< Size of name w/o null-terminator. Struct size
+                             *   is sizeof(struct hex_file) + name_len.  */
+    const char name[1];     /**< Name of hex file.  */
 };
 
+#define PARSE_INVALID_ADDRESS   ((uint32_t)(-1))
+/**
+ *
+ */
 struct parse_state {
-    uint32_t addr;
+    uint32_t addr;          /* FIXME: this field isn't being used, but should be. */
     uint32_t addr_hi;
     uint16_t addr_lo;
-	uint32_t line;
+    uint32_t line;
 };
 
 enum hex_file_passes {
-	PASS_VALIDATE,
-	PASS_WRITE,
-	PASS_VERIFY,
+    PASS_VALIDATE,
+    PASS_WRITE,
+    PASS_VERIFY,
 
-	PASS_COUNT
+    PASS_COUNT
 };
 
 /* Functions defined in hex.c */
-struct hex_file *hex_file_open(char *const name);
+struct hex_file *hex_file_open(const char *const name);
 int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl, enum hex_file_passes pass);
 void hex_close(struct hex_file *hex);
 
 static inline int hex_file_validate(struct hex_file *hex, struct usb_hid_bootloader *bl)
 {
-	return hex_file_parse(hex, bl, PASS_VALIDATE);
+    return hex_file_parse(hex, bl, PASS_VALIDATE);
 }
 
 static inline int hex_file_write(struct hex_file *hex, struct usb_hid_bootloader *bl)
 {
-	return hex_file_parse(hex, bl, PASS_WRITE);
+    return hex_file_parse(hex, bl, PASS_WRITE);
 }
 
 static inline int hex_file_verify(struct hex_file *hex, struct usb_hid_bootloader *bl)
 {
-	return hex_file_parse(hex, bl, PASS_VERIFY);
+    return hex_file_parse(hex, bl, PASS_VERIFY);
 }
 
+
 /* Functions defined in usb-hid-bootloader.c */
-struct usb_hid_bootloader *bl_open(const unsigned short vendorID,
-								   const unsigned short productID);
+struct usb_hid_bootloader *bl_open(void);
 void bl_protect_config(struct usb_hid_bootloader *bl);
 int bl_lock_unlock_config(struct usb_hid_bootloader *bl, bool locked);
 int bl_erase(struct usb_hid_bootloader *bl);
 int bl_write_data(struct usb_hid_bootloader *bl, struct parse_state *state,
-				  const struct hex_record *r, bool simulate_only);
+                  const struct hex_record *r, bool simulate_only);
 int bl_program_complete(struct usb_hid_bootloader *bl, bool simulate_only);
-const void *bl_get_data(struct usb_hid_bootloader *bl, uint32_t addr, uint8_t size);
+const void *bl_get_data(struct usb_hid_bootloader *bl, uint32_t addr,
+                        uint8_t size);
 int bl_reset(struct usb_hid_bootloader *bl);
 int bl_sign(struct usb_hid_bootloader *bl);
 int bl_query(struct usb_hid_bootloader *bl);
 void bl_close(struct usb_hid_bootloader *bl);
 
 static inline int bl_lock_config(struct usb_hid_bootloader *bl) {
-	return bl_lock_unlock_config(bl, true);
+    return bl_lock_unlock_config(bl, true);
 }
 
 static inline int bl_unlock_config(struct usb_hid_bootloader *bl) {
-	return bl_lock_unlock_config(bl, false);
+    return bl_lock_unlock_config(bl, false);
 }
 
 

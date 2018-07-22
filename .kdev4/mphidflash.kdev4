@@ -11,7 +11,7 @@ parserArgumentsC=-ferror-limit=100 -fspell-checking -Wdocumentation -Wunused-par
 Name=Clang
 
 [CustomDefinesAndIncludes][ProjectPath0][Includes]
-1=/home/daniel/proj/gse/mphidflash/build/
+1=/home/daniel/proj/gse/mphidflash/build/x86_64
 
 [Filters]
 size=35
