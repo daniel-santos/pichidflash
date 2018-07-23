@@ -177,35 +177,78 @@ static void packet_to_remote_endianness(struct pic_usb_hid_packet *p) {
     p->is_host_endianness = false;
 }
 
-#if 0
-    switch (p->cmd) {
-    case CMD_QUERY_DEVICE:
-    case CMD_UNLOCK_CONFIG:
-    case CMD_ERASE_DEVICE:
-    case CMD_PROGRAM_DEVICE:
-    case CMD_PROGRAM_COMPLETE:
-    case CMD_GET_DATA:
-    case CMD_RESET_DEVICE:
-    case CMD_SIGN_FLASH:
-    case CMD_QUERY_EXTENDED_INFO:
-    }
-#endif
+static const char *const mem_region_types[] = {
+    NULL,
+    "MEM_REGION_PROGRAM_MEM",
+    "MEM_REGION_EEDATA",
+    "MEM_REGION_CONFIG",
+    "MEM_REGION_USERID"
+};
 
-static inline void pic_usb_hid_packet_dump(const struct pic_usb_hid_packet *p, bool is_out) {
+static void pic_usb_hid_packet_dump(const struct pic_usb_hid_packet *p,
+                                    bool is_out)
+{
+#ifdef VERBOSE_DEBUG
+
     unsigned i;
     uint8_t cmd = p->cmd;
-
-    fprintf(stderr, "URB %s = {\n"
-            "  Command ",
-            is_out ? "OUT" : "IN");
+    const char *cmd_str;
+    char buf[16];
 
     if (cmd < CMD_MAX && cmd_names[cmd])
-        fprintf(stderr, "%s\n", cmd_names[cmd]);
-    else
-        fprintf(stderr, "0x%02x\n", cmd);
+        cmd_str = cmd_names[cmd];
+    else {
+        snprintf(buf, sizeof(buf), "unknown (0x%02hhx)", cmd);
+        cmd_str = buf;
+    }
+
+    fprintf(stderr, "URB %s = {\n"
+            "  Command %s\n",
+            is_out ? "OUT" : "IN", cmd_str);
 
     switch (cmd) {
     case CMD_QUERY_DEVICE:
+        if (is_out)
+            break;
+
+        fprintf(stderr,
+                "  PacketDataFieldSize %hhu\n"
+                "  BytesPerAddress    %hhu\n"
+                "  mem = {\n",
+                p->info.PacketDataFieldSize,
+                p->info.BytesPerAddress);
+
+        for (i = 0; i < sizeof(p->info.mem) / sizeof(*p->info.mem); ++i) {
+            uint8_t type = p->info.mem[i].Type;
+            const char *type_str;
+
+            if (type == MEM_REGION_END)
+                type_str = "MEM_REGION_END";
+            else if (type > 0 && type <= MEM_REGION_USERID)
+                type_str = mem_region_types[type];
+            else {
+                snprintf(buf, sizeof(buf), "unknown (0x%02hhx)", type);
+                type_str = buf;
+            }
+
+            fprintf(stderr,
+                    "    [%u] = {\n"
+                    "      Type    %s\n"
+                    "      Address 0x%08x\n"
+                    "      Length  0x%08x (%u)\n"
+                    "    }\n",
+                    i,
+                    type_str,
+                    p->info.mem[i].Address,
+                    p->info.mem[i].Length, p->info.mem[i].Length);
+        }
+
+        fprintf(stderr,
+                "  }\n"
+                "  VersionFlag   0x%02hhx %hhu\n",
+                p->info.VersionFlag, p->info.VersionFlag);
+        break;
+
     case CMD_UNLOCK_CONFIG:
     case CMD_ERASE_DEVICE:
         break;
@@ -214,12 +257,17 @@ static inline void pic_usb_hid_packet_dump(const struct pic_usb_hid_packet *p, b
     case CMD_PROGRAM_DEVICE:
         fprintf(stderr,
                 "  Address %08x\n"
-                "  Size    %02x\n"
-                "  Data    = {\n"
-                "    %04x:                    ",
+                "  Size    %02x\n",
                 p->data.Address,
-                p->data.Size,
-                0);
+                p->data.Size);
+
+        /* No need to spam stale buffer memory, even though we send it. */
+        if (cmd == CMD_GET_DATA && is_out)
+            break;
+
+        fprintf(stderr,
+                "  Data    = {\n"
+                "    0000:                    ");
 
         for (i = 0; i < sizeof(p->data.Data); ++i) {
             size_t off = i + offsetof(struct pic_usb_hid_packet, data.Data);
@@ -233,12 +281,19 @@ static inline void pic_usb_hid_packet_dump(const struct pic_usb_hid_packet *p, b
     case CMD_PROGRAM_COMPLETE:
     case CMD_RESET_DEVICE:
     case CMD_SIGN_FLASH:
-    case CMD_QUERY_EXTENDED_INFO:
         break;
+
+    case CMD_QUERY_EXTENDED_INFO:
+        if (!is_out) {
+            fprintf(stderr, "TODO: Add dump for extended info");
+        }
+        break;
+
     }
     fprintf(stderr, "}\n");
-}
 
+#endif /* VERBOSE_DEBUG */
+}
 
 /**
  *
@@ -286,7 +341,8 @@ static struct usb_dev_handle *find_and_open_usb(void) {
                     fprintf(stderr, "        -s %u:%hhu\n", (int)match->bus->location, match->devnum);
                 }
                 fprintf(stderr, "        -s %u:%hhu\n", (int)bus->location, dev->devnum);
-            }
+            } else
+                match = dev;
         }
     }
 
@@ -294,11 +350,11 @@ static struct usb_dev_handle *find_and_open_usb(void) {
         return ERR_PTR(-ENODEV);
 
     if (!match) {
-        err("USB HID Bootloader device with vid:pid %%04hx:%%04hx not found ----- UPDATE ME.\n");
+        err("USB HID Bootloader not found ----- UPDATE ME.\n");
         return ERR_PTR(-ENODEV);
     }
 
-    if (!(h = usb_open(dev))) {
+    if (!(h = usb_open(match))) {
         ret = -errno;
         perror("usb_open");
         err("Warning: matching device found, but " "cannot open usb device: %s\n", usb_strerror());
@@ -346,10 +402,9 @@ static int bl_submit(struct usb_hid_bootloader *bl, const unsigned char len,
 {
     int ret;
 
-#ifdef DEBUG
-    if (1)
+    if (get_opts()->debug_urbs)
         pic_usb_hid_packet_dump(&bl->buf, true);
-#endif
+
     packet_to_remote_endianness(&bl->buf);
     ret = usb_interrupt_write(bl->h, USB_ENDPOINT_OUT | 1, bl->buf.char_arr,
                               len, 5000);
@@ -368,10 +423,9 @@ static int bl_submit(struct usb_hid_bootloader *bl, const unsigned char len,
             return ret;
         }
         packet_to_host_endianness(&bl->buf);
-#ifdef DEBUG
-        if (1)
+
+        if (get_opts()->debug_urbs)
             pic_usb_hid_packet_dump(&bl->buf, false);
-#endif
     } else
         /* Else reset the flag for the next outgoing packet */
         bl->buf.is_host_endianness = true;
@@ -466,9 +520,13 @@ static int bl_flush(struct usb_hid_bootloader *bl, bool simulate_only) {
      * a PROGRAM_COMPLETE command prior to any other writes.
      */
     if (bl->buf.data.Size & 1) {
-        warn("Writing Stupid Byte(TM) at address 0x%08x because record "
-             "contained uneven number\nof bytes (%u), of which the PIC USB HID "
-             "is not fond.\n", bl->buf.data.Address, bl->buf.data.Size);
+        uint32_t stupid_addr = bl->buf.data.Address + bl->buf.data.Size;
+        if (simulate_only)
+            sim("writing Stupid Byte(TM) to 0x%08x\n", stupid_addr);
+        else
+            warn("Writing Stupid Byte(TM) to 0x%08x because record "
+                 "contained\nuneven number of bytes (%u).\n",
+                 stupid_addr, bl->buf.data.Size);
         bl->buf.data.Data[bl->buf.data.Size++] = PIC_ERASE_VALUE;
         bl->stupid_byte_written = true;
         bl->next_addr = (uint32_t) - 1;
@@ -478,33 +536,32 @@ static int bl_flush(struct usb_hid_bootloader *bl, bool simulate_only) {
     offset = (int)bl->info.PacketDataFieldSize - (int)bl->buf.data.Size;
     assert(offset >= 0);
 
-    /* Regardless of actual byte count, data packet is always 64 bytes.
-     * Following the header, the bootloader wants the data portion 'right
-     * justified' within packet.  Odd.
-     *
-     * It's simpler to do it here than while accumulating data.  */
+    /* Interrupt URBs are always 64 bytes and this strange bootloader wants
+     * the data 'right justified' for some strange reason.  */
     if (offset) {
         unsigned i;
         for (i = bl->buf.data.Size; i;) {
             --i;
             bl->buf.data.Data[i + offset] = bl->buf.data.Data[i];
         }
-        /* or...
+        /* Could also be written as follows, not sure which is better:
         memmove(bl->buf.data.Data + offset, bl->buf.data.Data,
-        		bl->buf.data.Size);
+                bl->buf.data.Size);
         */
     }
 
     if (bl->info.BytesPerAddress > 1)
         bl->buf.data.Address /= bl->info.BytesPerAddress;
 
-    //if (!simulate_only)
-    debug("addr=0x%08x, size=%u\n", bl->buf.data.Address, bl->buf.data.Size);
+    if (simulate_only)
+        sim("writing %u bytes to 0x%08x\n", bl->buf.data.Size, bl->buf.data.Address);
+    else
+        debug("addr=0x%08x, size=%u\n", bl->buf.data.Address, bl->buf.data.Size);
     if (!simulate_only && (ret = bl_submit(bl, 64, false))) {
         err("PROGRAM_DEVICE command failed and it's probably your fault.  "
             "What did you do!?\n");
         /* OK, not really, but there should be more than enough blame to
-        * spread around.  */
+         * spread around.  */
         return ret;
     }
 
@@ -524,8 +581,10 @@ int bl_program_complete(struct usb_hid_bootloader *bl, bool simulate_only) {
 
     if (bl->writing) {
         bl->buf.cmd = CMD_PROGRAM_COMPLETE;
-        //if (!simulate_only)
-        debug("\n");
+        if (simulate_only)
+            sim("Sending CMD_PROGRAM_COMPLETE\n");
+        else
+            debug("\n");
         if (!simulate_only && (ret = bl_submit(bl, 1, false))) {
             err("PROGRAM_COMPLETE command failed.\n");
             return ret;

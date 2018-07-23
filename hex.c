@@ -69,11 +69,13 @@ enum hex_record_sections {
     HEX_SECTION_COUNT
 };
 
-static inline void hex_record_print(FILE *out, const char *line_start,
-				    const char *line_end, bool nocolor)
+static inline void hex_record_print(FILE *out, const struct parse_state *state)
 {
     char data_fmt[8];
-#ifndef NO_COLOR
+    const char *line_start = state->line_start;
+    const char *line_end   = state->line_end;
+
+#ifdef VERBOSE_DEBUG
     unsigned data_len = line_end - line_start - 11;
     /**
      * Some ANSI colors to make your day bright.
@@ -89,7 +91,7 @@ static inline void hex_record_print(FILE *out, const char *line_start,
     const char *ansi_forground_blk = "\x1b[38;2;0;0;0m";
     const char *ansi_reset = "\x1b[0m";
 
-    if (!nocolor) {
+    if (!get_opts()->no_color) {
         data_len = line_end - line_start - 11;
         if (data_len > 255)
             data_len = 255;
@@ -114,9 +116,9 @@ static inline void hex_record_print(FILE *out, const char *line_start,
                 line_end - 2,
                 ansi_reset);
     } else
-#endif /* NO_COLOR */
+#endif /* VERBOSE_DEBUG */
     {
-        snprintf(data_fmt, sizeof(data_fmt), "%%.%zus", line_end - line_start);
+        snprintf(data_fmt, sizeof(data_fmt), "%%.%zus\n", line_end - line_start);
         fprintf(out, data_fmt, line_start);
     }
 }
@@ -255,17 +257,15 @@ int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl,
     unsigned checksum;
     unsigned i;
     int ret;
-    struct parse_state state = {PARSE_INVALID_ADDRESS, 0, 0, 0};
+    struct parse_state state = {PARSE_INVALID_ADDRESS, 0, 0, 0, NULL, NULL};
     const char *p = hex->data;
     const char *const end = hex->data + hex->stat.st_size;
-    const char *line_start;
-    const char *line_end;
 
     fprintf(stderr, "\n\%s hex...\n\n", pass_names[pass]);
 
     /* Each line in file */
     for (state.line = 0; p < end; ++state.line) {
-        line_start = p;
+        state.line_start = p;
         if (*(p++) != ':') {
             err("malformed start of line\n");
             goto bad_hex;
@@ -284,11 +284,10 @@ int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl,
             p += 2;
         }
         r.addr = be16_to_cpu(r.addr_be16);
-        r.rec_size = (line_end = p) - line_start - 1;
+        r.rec_size = (state.line_end = p) - state.line_start - 1;
 
-#ifdef DEBUG
-        hex_record_print(stderr, line_start, line_end, false);
-#endif
+        if (get_opts()->debug_hex)
+            hex_record_print(stderr, &state);
 
         if (col == 260) {
             err("malformed: record too long\n");
@@ -406,14 +405,6 @@ bad_hex:
     return -1;
 }
 
-/****************************************************************************
- Function    : hexClose
- Description : Unmaps and closes previously-opened hex file.
- Parameters  : None
- Returns     : Nothing
- Notes       : File is assumed to have already been successfully opened
-               by the time this function is called; no checks performed here.
- ****************************************************************************/
 void hex_close(struct hex_file *hex) {
 #ifndef WIN
     munmap((void*)hex->data, hex->stat.st_size);

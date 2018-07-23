@@ -46,6 +46,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "config.h"
+
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(*arr))
 
 #ifdef __GNUC__
@@ -93,7 +95,8 @@ static inline bool __must_check IS_ERR_OR_NULL(__force const void *ptr)
 #endif /* DEBUG */
 #define info(fmt, ...) fprintf(stderr, "info: %s: " fmt, __FUNCTION__, ##__VA_ARGS__)
 #define warn(fmt, ...) fprintf(stderr, "WARNING: %s: " fmt, __FUNCTION__, ##__VA_ARGS__)
-#define err(fmt, ...) fprintf(stderr, "ERROR: %s: " fmt, __FUNCTION__, ##__VA_ARGS__)
+#define err(fmt, ...)  fprintf(stderr, "ERROR: %s: " fmt, __FUNCTION__, ##__VA_ARGS__)
+#define sim(fmt, ...)  fprintf(stderr, "simulation: " fmt, ##__VA_ARGS__)
 #define fail(fmt, ...) do {err(fmt, ##__VA_ARGS__); exit(-1);} while (0)
 
 #if 1
@@ -150,7 +153,7 @@ enum actions {
     ACTION_WRITE        = 1 << 3,
     ACTION_VERIFY       = 1 << 4,
     ACTION_SIGN         = 1 << 5,
-    ACTION_RESET        = 1 << 6
+    ACTION_RESET        = 1 << 6,
 };
 
 #define DEFAULT_VENDOR_ID   ((uint16_t)0x04d8)
@@ -207,6 +210,7 @@ struct options {
             int debug:1;
             int debug_hex:1;
             int debug_urbs:1;
+            int no_color:1;
         };
     };
 };
@@ -383,6 +387,8 @@ struct parse_state {
     uint32_t addr_hi;
     uint16_t addr_lo;
     uint32_t line;
+    const char *line_start;
+    const char *line_end;
 };
 
 enum hex_file_passes {

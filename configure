@@ -626,6 +626,7 @@ ac_header_list=
 ac_subst_vars='am__EXEEXT_FALSE
 am__EXEEXT_TRUE
 LTLIBOBJS
+VERBOSE_DEBUG
 LIBOBJS
 EGREP
 GREP
@@ -734,6 +735,7 @@ ac_user_opts='
 enable_option_checking
 enable_silent_rules
 enable_dependency_tracking
+enable_debug
 '
       ac_precious_vars='build_alias
 host_alias
@@ -1374,6 +1376,10 @@ Optional Features:
                           do not reject slow dependency extractors
   --disable-dependency-tracking
                           speeds up one-time build
+  --disable-debug         Omit verbose debug code for formatting, colorizing,
+                          and printing URBs and .hex file records that are
+                          useful when troubleshooting bootloader problems, but
+                          make the executable larger.
 
 Some influential environment variables:
   CC          C compiler command
@@ -5056,6 +5062,20 @@ fi
 done
 
 
+# Check whether --enable-debug was given.
+if test "${enable_debug+set}" = set; then :
+  enableval=$enable_debug;
+else
+  enable_debug=yes
+fi
+
+
+if test x"$enable_debug" = xyes ; then
+
+$as_echo "#define VERBOSE_DEBUG 1 " >>confdefs.h
+
+
+fi
 
 ac_config_files="$ac_config_files Makefile"
 

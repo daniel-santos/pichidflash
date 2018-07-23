@@ -34,6 +34,18 @@ AC_FUNC_MALLOC
 AC_FUNC_MMAP
 AC_CHECK_FUNCS([munmap memset])
 
+AC_ARG_ENABLE([debug],
+    AS_HELP_STRING([--disable-debug], [Omit verbose debug code for formatting,
+        colorizing, and printing URBs and .hex file records that are useful
+        when troubleshooting bootloader problems, but make the executable
+        larger.]),
+    [] ,
+    [enable_debug=yes])
+
+if test x"$enable_debug" = xyes ; then
+   AC_DEFINE(VERBOSE_DEBUG, 1 , TODO)
+   AC_SUBST(VERBOSE_DEBUG)
+fi
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

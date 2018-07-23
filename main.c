@@ -91,6 +91,7 @@ PACKAGE_TARNAME " v" VERSION ": a Microchip PIC USB HID Bootloader utility\n"
 static void print_options(const char *argv0)
 {
     fprintf(stderr, help_str, DEFAULT_VENDOR_ID, DEFAULT_PRODUCT_ID);
+    exit(-1);
 }
 
 int main(int argc, char *argv[]) {
@@ -126,12 +127,12 @@ int main(int argc, char *argv[]) {
             {"check",       no_argument,        0, 'c'},
             {"unlock",      no_argument,        0, 'u'},
             {"erase",       no_argument,        0, 'e'},
-            {"no-erase",    no_argument,        0, 'E'},
             {"write",       no_argument,        0, 'w'},
             {"verify",      no_argument,        0, 'v'},
-            {"no-verify",   no_argument,        0, 'V'},
             {"sign",        no_argument,        0, 'S'},
             {"reset",       no_argument,        0, 'r'},
+            {"no-erase",    no_argument,        0, 'E'},
+            {"no-verify",   no_argument,        0, 'V'},
             {"slot",        required_argument,  0, 's'},
             {"bus",         required_argument,  0, 'b'},
             {"device",      required_argument,  0, 'D'},
@@ -142,7 +143,7 @@ int main(int argc, char *argv[]) {
         };
 
 
-        c = getopt_long(argc, argv, "cueEwvVSrs:b:D:d:Ch", long_options, &option_index);
+        c = getopt_long(argc, argv, "cuewvSrEVs:b:D:d:Ch", long_options, &option_index);
 
         if (c == -1)
             break;
@@ -166,10 +167,6 @@ int main(int argc, char *argv[]) {
             opts.erase = true;
             break;
 
-        case 'E':
-            opts.no_erase = true;
-            break;
-
         case 'w':
             opts.write = true;
             break;
@@ -178,16 +175,20 @@ int main(int argc, char *argv[]) {
             opts.verify = true;
             break;
 
-        case 'V':
-            opts.no_verify = true;
-            break;
-
         case 'S':
             opts.sign = true;
             break;
 
         case 'r':
             opts.reset = true;
+            break;
+
+        case 'E':
+            opts.no_erase = true;
+            break;
+
+        case 'V':
+            opts.no_verify = true;
             break;
 
         case 's':
@@ -214,7 +215,11 @@ int main(int argc, char *argv[]) {
 /* FIXME */
             opts.debug = true;
             opts.debug_hex = true;
-            opts.debug_urbs = false;
+            opts.debug_urbs = true;
+            break;
+
+        case 'C':
+            opts.no_color = true;
             break;
 
         case 'h':
@@ -264,15 +269,15 @@ struct option1s {
 };
     if (opts.erase && opts.no_erase) {
         err("Cannot specify --erase and --no-erase.\n");
-         print_options(argv[0]);
+        print_options(argv[0]);
     }
 
     if (opts.verify && opts.no_verify) {
         err("Cannot specify --verify and --no-verify.\n");
-         print_options(argv[0]);
+        print_options(argv[0]);
     }
 
-    /* Supply default vid:pid */
+    /* Supply default vid:pid unless --slot was used. */
     if (!(opts.have_bus && opts.have_devnum)) {
         opts.idVendor  = DEFAULT_VENDOR_ID;
         opts.idProduct = DEFAULT_PRODUCT_ID;
@@ -283,25 +288,34 @@ struct option1s {
     opts.actions = (opts.check  ? ACTION_CHECK  : 0)
                  | (opts.unlock ? ACTION_UNLOCK : 0)
                  | (opts.erase  ? ACTION_ERASE  : 0)
-                 | (opts.verify ? ACTION_VERIFY | ACTION_CHECK : 0)
-                 | (opts.sign   ? ACTION_SIGN   : 0)
-                 | (opts.reset  ? ACTION_RESET  : 0)
-    /* --write implies --check, --erase and --verify */
                  | (opts.write  ? ACTION_WRITE | ACTION_CHECK
                                   | (!opts.no_erase  ? ACTION_ERASE  : 0)
                                   | (!opts.no_verify ? ACTION_VERIFY : 0)
-                                : 0);
+                                : 0)
+                 | (opts.verify ? ACTION_VERIFY | ACTION_CHECK : 0)
+                 | (opts.sign   ? ACTION_SIGN   : 0)
+                 | (opts.reset  ? ACTION_RESET  : 0);
+
+    if (!opts.actions) {
+        err("Nothing to do.\n");
+        print_options(argv[0]);
+    }
+
+    if (!opts.file_name && (opts.actions & (ACTION_CHECK | ACTION_WRITE
+                                                        | ACTION_VERIFY))) {
+        err("No input file specified.\n");
+        print_options(argv[0]);
+    }
 
     if (opts.file_name && !(hex = hex_file_open(opts.file_name)))
         fail("Failed to open file %s\n", opts.file_name);
-
-    /* After successful command-line parsage, find/open USB device. */
 
     if (IS_ERR(bl = bl_open())) {
         errno = -PTR_ERR(bl);
         perror("bl_open");
         return -1;
     }
+
     printf("USB HID device found...\n");
 
     /* And start doing stuff... */
@@ -314,15 +328,18 @@ struct option1s {
 
     putchar('\n');
 
-    printf("Reading file '%s'...", hex->name);
-    if (hex_file_validate(hex, bl))
-        fail("\nHex file validation failed.\n");
-    printf("done.\n");
+    if (opts.actions & ACTION_CHECK) {
+        printf("Reading file '%s'...", hex->name);
+        if (hex_file_validate(hex, bl))
+            fail("\nFailed to parse file %s.\n",opts.file_name);
+        puts("done\n");
+    }
 
     if (opts.actions & ACTION_UNLOCK) {
-        puts("Unlocking configuration memory...");
+        puts("Unlocking configuration...");
         if (bl_unlock_config(bl))
             fail("Unlock command failed.\n");
+        puts("done\n");
     } else
         /* Otherwise make sure we don't try to modify it. */
         bl_protect_config(bl);
@@ -331,9 +348,10 @@ struct option1s {
         puts("Erasing...");
         if (bl_erase(bl))
             fail("Erase failed");
+        puts("done\n");
     }
 
-    if (hex) {
+     if (opts.actions & ACTION_WRITE) {
         printf("Writing hex file '%s':", opts.file_name);
         if (hex_file_write(hex, bl))
             fail("\nFlashing failed.");
@@ -344,23 +362,27 @@ struct option1s {
         printf("Verifying...");
         if (hex_file_verify(hex, bl))
             fail("\nVeryfing failed.");
-        putchar('\n');
+        puts("done\n");
     }
 
     if (opts.actions & ACTION_SIGN) {
         puts("Signing image...");
         if (bl_sign(bl))
             fail("Signing failed.");
+        puts("done\n");
     }
 
     if (opts.actions & ACTION_RESET) {
         puts("Resetting device...");
         if (bl_reset(bl))
             fail("Reset failed.\n");
+        puts("done\n");
     }
 
     bl_close(bl);
     free(bl);
+    if (hex)
+        hex_close(hex);
 
     return 0;
 }
