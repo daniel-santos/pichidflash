@@ -144,20 +144,17 @@ static inline bool __must_check IS_ERR_OR_NULL(__force const void *ptr)
  * (such as writing) don't have corresponding bits here; certain non-NULL
  * string values indicate such actions should occur. */
 enum actions {
-    ACTION_VALIDATE     = 1 << 0,
+    ACTION_CHECK        = 1 << 0,
     ACTION_UNLOCK       = 1 << 1,
     ACTION_ERASE        = 1 << 2,
     ACTION_WRITE        = 1 << 3,
     ACTION_VERIFY       = 1 << 4,
     ACTION_SIGN         = 1 << 5,
-    ACTION_RESET        = 1 << 6,
-    ACTION_DEBUG        = 1 << 7,
-    ACTION_DEBUG_HEX    = 1 << 8,
-    ACTION_DEBUG_URBS   = 1 << 9
+    ACTION_RESET        = 1 << 6
 };
 
-#define DEFAULT_VENDOR_ID   0x04d8
-#define DEFAULT_PRODUCT_ID  0x003c
+#define DEFAULT_VENDOR_ID   ((uint16_t)0x04d8)
+#define DEFAULT_PRODUCT_ID  ((uint16_t)0x003c)
 #if 0
 char *a =
 "%s v" VERSION ": a Microchip PIC USB HID Bootloader utility\n"

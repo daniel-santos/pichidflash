@@ -115,7 +115,6 @@ const char *const cmd_names[CMD_MAX] = {
     "CMD_QUERY_EXTENDED_INFO",
 };
 
-
 /* Sub-commands for the ERASE_DEVICE command */
 #define UNLOCKCONFIG      0x00
 #define LOCKCONFIG        0x01

@@ -47,57 +47,51 @@
 #include "mphidflash.h"
 #include "config.h"
 
-#define DEFAULT_VENDOR_ID   0x04d8
-#define DEFAULT_PRODUCT_ID  0x003c
-
-//VERSION
-
-static struct options opts = {
-    .file_name  = NULL,
-    .idVendor   = DEFAULT_VENDOR_ID,
-    .idProduct  = DEFAULT_PRODUCT_ID,
-    .bus        = 0,
-    .devnum     = 0,
-    .actions    = 0,
-    .opts       = 0
-};
+static struct options opts;
 
 const struct options *get_opts(void)
 {
     return &opts;
 }
 
-static void print_options(const char *argv0)
-{
-    fprintf(stderr,
-"%s v" VERSION ": a Microchip PIC USB HID Bootloader utility\n"
+const char *const help_str =
+PACKAGE_TARNAME " v" VERSION ": a Microchip PIC USB HID Bootloader utility\n"
 "\n"
 "USAGE\n"
-"    %s <action> [options] [hex_file]\n"
+"    " PACKAGE_TARNAME " <action> [options] [hex_file]\n"
 "\n"
 "action is one of\n"
-"-w, --write     Write hex file to device (implies --erase --verify).\n"
-"-c, --check\n"
+"-w, --write     Write hex file to device (implies --check, --erase, --verify).\n"
+"-c, --check     Only read the .hex file and validate it can be programmed to device.\n"
 "-e, --erase     Erase program memory.\n"
 "-E, --no-erase  Do not erase (only meaningful with --write).\n"
-"-s, --sign      Sign firmware image (recent PIC bootloaders).\n"
+"-S, --sign      Sign firmware image (recent PIC bootloaders).\n"
 "-r, --reset     Reset device.\n"
 "-v, --verify    Verify program memory.  When used without --write, will\n"
 "                check if hex file has already been programmed.\n"
 "-V, --no-verify Do not perform verfication (only meaningful with --write)\n"
 "-u, --unlock    Unlock configuration memory before erase/write and allow\n"
 "                hex file to overwrite configuration bytes\n"
-"-v, --vid <hex> USB device vendor ID  (default %04x)\n"
-"-p, --pid <hex> USB device product ID (default %04x)\n"
+"-D, --device vid:pid\n"
+"                Specify 4 digit hexidecimal Vendor ID and Product ID.\n"
+"                Defaults to %04hx:%04hx if --slot is unspecified, unset\n"
+"                otherwise.\n"
+"-b, --bus n     Look only search the specified USB bus\n"
+"-s, --slot n:n  Specify the exact USB bus and device number, ignoring the\n"
+"                default vid:pid filter.  To restrict vid:pid when using,\n"
+"                --slot, you must supply an explicit --device specification.\n"
 "-C, --no-color  No pretty colors.\n"
-"-d, --debug [category[,category]]\n"
+"-d, --debug___this help is wrong[category[,category]]\n"
 "                Enable debuging.  Optional (additional) catagories are:\n"
 "                    general    \n"
 "                    hex        display hex file as it is parsed\n"
 "                    urbs       display all in and out URBs to the bootloader\n"
-"-h, --help      Help\n", argv0, argv0, DEFAULT_VENDOR_ID, DEFAULT_PRODUCT_ID);
-}
+"-h, --help      Help\n";
 
+static void print_options(const char *argv0)
+{
+    fprintf(stderr, help_str, DEFAULT_VENDOR_ID, DEFAULT_PRODUCT_ID);
+}
 
 int main(int argc, char *argv[]) {
     int ret;
@@ -125,7 +119,48 @@ int main(int argc, char *argv[]) {
        -w <file>        Write program memory
        -r               Reset */
 
-
+    //init_default_opts();
+    memset(&opts, 0, sizeof(opts));
+#if 0
+enum actionas {
+    ACTION_VALIDATE     = 1 << 0,
+    ACTION_UNLOCK       = 1 << 1,
+    ACTION_ERASE        = 1 << 2,
+    ACTION_WRITE        = 1 << 3,
+    ACTION_VERIFY       = 1 << 4,
+    ACTION_SIGN         = 1 << 5,
+    ACTION_RESET        = 1 << 6
+};
+struct options {
+    const char *file_name;
+    uint16_t idVendor;
+    uint16_t idProduct;
+    uint32_t bus;
+    uint8_t devnum;
+    enum actions actions;
+    union {
+        int opts;
+        struct {
+            int check:1;
+            int unlock:1;
+            int erase:1;
+            int no_erase:1;
+            int write:1;
+            int verify:1;
+            int no_verify:1;
+            int sign:1;
+            int reset:1;
+            int have_bus:1;
+            int have_devnum:1;
+            int have_vid:1;
+            int have_pid:1;
+            int debug:1;
+            int debug_hex:1;
+            int debug_urbs:1;
+        };
+    };
+};
+#endif
     while (1) {
         int c;
         int option_index = 0;
@@ -137,86 +172,91 @@ int main(int argc, char *argv[]) {
             {"write",       no_argument,        0, 'w'},
             {"verify",      no_argument,        0, 'v'},
             {"no-verify",   no_argument,        0, 'V'},
-            {"sign",        no_argument,        0, 's'},
+            {"sign",        no_argument,        0, 'S'},
             {"reset",       no_argument,        0, 'r'},
             {"slot",        required_argument,  0, 's'},
-            {"debug",       no_argument,        0, 'd'},
+            {"bus",         required_argument,  0, 'b'},
+            {"device",      required_argument,  0, 'D'},
+            {"debug",       required_argument,  0, 'd'},
+            {"no-color",    no_argument,        0, 'C'},
             {"help",        no_argument,        0, 'h'},
             {0,             0,                  0, 0}
         };
-struct optiaons {
-    const char *file_name;
-    uint16_t vendorID;
-    uint16_t productID;
-    enum actions actions;
-    union {
-        int opts;
-        struct {
-            int validate:1;
-            int write:1;
-            int erase:1;
-            int no_erase:1;
-            int unlock:1;
-            int no_unlock:1;
-            int verify:1;
-            int no_verify:1;
-            int sign:1;
-            int reset:1;
-            int debug:1;
-            int debug_hex:1;
-            int debug_urbs:1;
-        };
-    };
-};
 
-        c = getopt_long(argc, argv, "w:esrvVuv:p:h?", long_options, &option_index);
+
+        c = getopt_long(argc, argv, "cueEwvVSrs:b:D:d:Ch", long_options, &option_index);
+
         if (c == -1)
             break;
 
         switch (c) {
+#if 0
         case 0:
             fprintf(stderr, "option %s\n", long_options[option_index].name);
             printf("\n");
             break;
-
-        case 'w':
-            opts.write = true;
-            opts.file_name = optarg;
-            break;
-
-        case 'e':
-            opts.erase = true;
-            //opts.flags |= ACTION_ERASE;
-            break;
-
-        case 's':
-            opts.sign = true;
-            //opts.flags |= ACTION_SIGN;
-            break;
-
-        case 'r':
-            opts.reset = true;
-            //actions |= ACTION_RESET;
-            break;
-
-        case 'n':
-            opts.no_verify = true;
-            //opts.flags &= ~ACTION_VERIFY;
+#endif
+        case 'c':
+            opts.check = true;
             break;
 
         case 'u':
             opts.unlock = true;
-            //opts.flags |= ACTION_UNLOCK;
+            break;
+
+        case 'e':
+            opts.erase = true;
+            break;
+
+        case 'E':
+            opts.no_erase = true;
+            break;
+
+        case 'w':
+            opts.write = true;
             break;
 
         case 'v':
-            if (sscanf(optarg, "%hx", &opts.idVendor) != 1)
-                fail("Failed to parse -v");
+            opts.verify = true;
             break;
 
-        case 'p':
-            if (sscanf(optarg, "%hx", &opts.idProduct) != 1)
-                fail("Failed to parse -p");
+        case 'V':
+            opts.no_verify = true;
+            break;
+
+        case 'S':
+            opts.sign = true;
+            break;
+
+        case 'r':
+            opts.reset = true;
+            break;
+
+        case 's':
+            if (sscanf(optarg, "%u:%hhu", &opts.bus, &opts.devnum) != 2)
+                fail("Failed to parse --slot");
+            opts.have_bus = true;
+            opts.have_devnum = true;
+            break;
+
+        case 'b':
+            if (sscanf(optarg, "%u", &opts.bus) != 1)
+                fail("Failed to parse --bus");
+            opts.have_bus = true;
+            break;
+
+        case 'D':
+            if (sscanf(optarg, "%hx:%hx", &opts.idVendor, &opts.idProduct) != 2)
+                fail("Failed to parse --device");
+            opts.have_vid = true;
+            opts.have_pid = true;
+            break;
+
+        case 'd':
+/* FIXME */
+            opts.debug = true;
+            opts.debug_hex = true;
+            opts.debug_urbs = false;
             break;
 
         case 'h':
@@ -225,6 +265,66 @@ struct optiaons {
             return -1;
         }
     }
+
+    if (optind < argc)
+        opts.file_name = argv[optind++];
+
+    if (optind < argc) {
+        err("Too many arguments");
+        print_options(argv[0]);
+    }
+
+
+struct option1s {
+    const char *file_name;
+    uint16_t idVendor;
+    uint16_t idProduct;
+    uint32_t bus;
+    uint8_t devnum;
+    enum actions actions;
+    union {
+        int opts;
+        struct {
+            int check:1;
+            int unlock:1;
+            int erase:1;
+            int no_erase:1;
+            int write:1;
+            int verify:1;
+            int no_verify:1;
+            int sign:1;
+            int reset:1;
+            int have_bus:1;
+            int have_devnum:1;
+            int have_vid:1;
+            int have_pid:1;
+            int debug:1;
+            int debug_hex:1;
+            int debug_urbs:1;
+        };
+    };
+};
+    if (opts.erase && opts.no_erase) {
+        err("Cannot specify --erase and --no-erase.\n");
+         print_options(argv[0]);
+    }
+
+    if (opts.verify && opts.no_verify) {
+        err("Cannot specify --verify and --no-verify.\n");
+         print_options(argv[0]);
+    }
+
+    opts.actions = (opts.check  ? ACTION_CHECK  : 0)
+                 | (opts.unlock ? ACTION_UNLOCK : 0)
+                 | (opts.erase  ? ACTION_ERASE  : 0)
+                 | (opts.verify ? ACTION_VERIFY : 0)
+                 | (opts.sign   ? ACTION_SIGN   : 0)
+                 | (opts.reset  ? ACTION_RESET  : 0)
+    /* --write implies --check, --erase, --verify */
+                 | (opts.write  ? ACTION_WRITE | ACTION_CHECK
+                                  | (!opts.no_erase  ? ACTION_ERASE  : 0)
+                                  | (!opts.no_verify ? ACTION_VERIFY : 0)
+                                : 0);
 
     if (opts.file_name && !(hex = hex_file_open(opts.file_name)))
         fail("Failed to open file %s\n", opts.file_name);
