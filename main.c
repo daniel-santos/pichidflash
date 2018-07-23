@@ -119,48 +119,6 @@ int main(int argc, char *argv[]) {
        -w <file>        Write program memory
        -r               Reset */
 
-    //init_default_opts();
-    memset(&opts, 0, sizeof(opts));
-#if 0
-enum actionas {
-    ACTION_VALIDATE     = 1 << 0,
-    ACTION_UNLOCK       = 1 << 1,
-    ACTION_ERASE        = 1 << 2,
-    ACTION_WRITE        = 1 << 3,
-    ACTION_VERIFY       = 1 << 4,
-    ACTION_SIGN         = 1 << 5,
-    ACTION_RESET        = 1 << 6
-};
-struct options {
-    const char *file_name;
-    uint16_t idVendor;
-    uint16_t idProduct;
-    uint32_t bus;
-    uint8_t devnum;
-    enum actions actions;
-    union {
-        int opts;
-        struct {
-            int check:1;
-            int unlock:1;
-            int erase:1;
-            int no_erase:1;
-            int write:1;
-            int verify:1;
-            int no_verify:1;
-            int sign:1;
-            int reset:1;
-            int have_bus:1;
-            int have_devnum:1;
-            int have_vid:1;
-            int have_pid:1;
-            int debug:1;
-            int debug_hex:1;
-            int debug_urbs:1;
-        };
-    };
-};
-#endif
     while (1) {
         int c;
         int option_index = 0;
@@ -314,13 +272,21 @@ struct option1s {
          print_options(argv[0]);
     }
 
+    /* Supply default vid:pid */
+    if (!(opts.have_bus && opts.have_devnum)) {
+        opts.idVendor  = DEFAULT_VENDOR_ID;
+        opts.idProduct = DEFAULT_PRODUCT_ID;
+        opts.have_vid  = true;
+        opts.have_pid  = true;
+    }
+
     opts.actions = (opts.check  ? ACTION_CHECK  : 0)
                  | (opts.unlock ? ACTION_UNLOCK : 0)
                  | (opts.erase  ? ACTION_ERASE  : 0)
-                 | (opts.verify ? ACTION_VERIFY : 0)
+                 | (opts.verify ? ACTION_VERIFY | ACTION_CHECK : 0)
                  | (opts.sign   ? ACTION_SIGN   : 0)
                  | (opts.reset  ? ACTION_RESET  : 0)
-    /* --write implies --check, --erase, --verify */
+    /* --write implies --check, --erase and --verify */
                  | (opts.write  ? ACTION_WRITE | ACTION_CHECK
                                   | (!opts.no_erase  ? ACTION_ERASE  : 0)
                                   | (!opts.no_verify ? ACTION_VERIFY : 0)
