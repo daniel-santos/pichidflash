@@ -80,12 +80,14 @@ PACKAGE_TARNAME " v" VERSION ": a Microchip PIC USB HID Bootloader utility\n"
 "-s, --slot n:n  Specify the exact USB bus and device number, ignoring the\n"
 "                default vid:pid filter.  To restrict vid:pid when using,\n"
 "                --slot, you must supply an explicit --device specification.\n"
+"-d, --debug     Enable debug messages\n"
+"-H, --debug-hex Prints each HEX record as they are processed.  Unless\n"
+"               --no-color, the records are printed with ANSI coloriziation\n"
+"                to demarcate fields.\n"
+"-U, --debug-urbs Dumps each in and out URB.  This is helpful when trying to\n"
+"                troubleshoot communications problems or debug the\n"
+"                bootloader.\n"
 "-C, --no-color  No pretty colors.\n"
-"-d, --debug___this help is wrong[category[,category]]\n"
-"                Enable debuging.  Optional (additional) catagories are:\n"
-"                    general    \n"
-"                    hex        display hex file as it is parsed\n"
-"                    urbs       display all in and out URBs to the bootloader\n"
 "-h, --help      Help\n";
 
 static void print_options(const char *argv0)
@@ -136,7 +138,9 @@ int main(int argc, char *argv[]) {
             {"slot",        required_argument,  0, 's'},
             {"bus",         required_argument,  0, 'b'},
             {"device",      required_argument,  0, 'D'},
-            {"debug",       required_argument,  0, 'd'},
+            {"debug",       no_argument,        0, 'd'},
+            {"debug-hex",   no_argument,        0, 'H'},
+            {"debug-urbs",  no_argument,        0, 'U'},
             {"no-color",    no_argument,        0, 'C'},
             {"help",        no_argument,        0, 'h'},
             {0,             0,                  0, 0}
@@ -212,9 +216,14 @@ int main(int argc, char *argv[]) {
             break;
 
         case 'd':
-/* FIXME */
             opts.debug = true;
+            break;
+
+        case 'H':
             opts.debug_hex = true;
+            break;
+
+        case 'U':
             opts.debug_urbs = true;
             break;
 
@@ -237,36 +246,6 @@ int main(int argc, char *argv[]) {
         print_options(argv[0]);
     }
 
-
-struct option1s {
-    const char *file_name;
-    uint16_t idVendor;
-    uint16_t idProduct;
-    uint32_t bus;
-    uint8_t devnum;
-    enum actions actions;
-    union {
-        int opts;
-        struct {
-            int check:1;
-            int unlock:1;
-            int erase:1;
-            int no_erase:1;
-            int write:1;
-            int verify:1;
-            int no_verify:1;
-            int sign:1;
-            int reset:1;
-            int have_bus:1;
-            int have_devnum:1;
-            int have_vid:1;
-            int have_pid:1;
-            int debug:1;
-            int debug_hex:1;
-            int debug_urbs:1;
-        };
-    };
-};
     if (opts.erase && opts.no_erase) {
         err("Cannot specify --erase and --no-erase.\n");
         print_options(argv[0]);

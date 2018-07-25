@@ -50,11 +50,11 @@
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(*arr))
 
+/* A few helpful macros and inlines stolen from Linux. */
 #ifdef __GNUC__
 # define likely(x)    __builtin_expect(!!(x), 1)
 # define unlikely(x)  __builtin_expect(!!(x), 0)
 # define __must_check __attribute__((warn_unused_result))
-//# define __force      __attribute__((force))
 # define __aligned(x) __attribute__((aligned(x)))
 #else
 # define likely(x)   (x)
@@ -62,60 +62,29 @@
 # define __must_check
 # define __aligned(x)
 #endif
-# define __force
 
-#define MAX_ERRNO	4095
+#define MAX_ERRNO 4095
 #define IS_ERR_VALUE(x) unlikely((unsigned long)(void *)(x) >= (unsigned long)-MAX_ERRNO)
 
 static inline void * __must_check ERR_PTR(long error)
 {
-	return (void *) error;
+    return (void *) error;
 }
 
-static inline long __must_check PTR_ERR(__force const void *ptr)
+static inline long __must_check PTR_ERR(const void *ptr)
 {
-	return (long) ptr;
+    return (long) ptr;
 }
 
-static inline bool __must_check IS_ERR(__force const void *ptr)
+static inline bool __must_check IS_ERR(const void *ptr)
 {
-	return IS_ERR_VALUE((unsigned long)ptr);
+    return IS_ERR_VALUE((unsigned long)ptr);
 }
 
-static inline bool __must_check IS_ERR_OR_NULL(__force const void *ptr)
+static inline bool __must_check IS_ERR_OR_NULL(const void *ptr)
 {
-	return unlikely(!ptr) || IS_ERR_VALUE((unsigned long)ptr);
+    return unlikely(!ptr) || IS_ERR_VALUE((unsigned long)ptr);
 }
-
-/* FIXME: GCC extensions used here.  Use Wine-style macros?  */
-#ifdef DEBUG
-# define debug(fmt, ...) fprintf(stderr, "debug: %s: " fmt, __FUNCTION__, ##__VA_ARGS__)
-#else
-# define debug(fmt, ...) do {} while (0)
-#endif /* DEBUG */
-#define info(fmt, ...) fprintf(stderr, "info: %s: " fmt, __FUNCTION__, ##__VA_ARGS__)
-#define warn(fmt, ...) fprintf(stderr, "WARNING: %s: " fmt, __FUNCTION__, ##__VA_ARGS__)
-#define err(fmt, ...)  fprintf(stderr, "ERROR: %s: " fmt, __FUNCTION__, ##__VA_ARGS__)
-#define sim(fmt, ...)  fprintf(stderr, "simulation: " fmt, ##__VA_ARGS__)
-#define fail(fmt, ...) do {err(fmt, ##__VA_ARGS__); exit(-1);} while (0)
-
-#if 1
-/* On Intel architectures, can make some crass endianism optimizations */
-
-#if defined(i386) || defined(__x86_64__)
-#define bufWrite32(dest, pos, val) *(unsigned int *)&dest[pos] = val
-#define bufRead32(src, pos)          *(unsigned int *)&src[pos]
-#else
-#define bufWrite32(dest, pos, val) dest[pos    ] =  val        & 0xff; \
-                                dest[pos + 1] = (val >>  8) & 0xff; \
-                                dest[pos + 2] = (val >> 16) & 0xff; \
-                                dest[pos + 3] = (val >> 24)
-#define bufRead32(src, pos)         ( src[pos    ]        | \
-                                (src[pos + 1] <<  8) | \
-                                (src[pos + 2] << 16) | \
-                                (src[pos + 3] << 24) )
-#endif /* i386 || __x86_64__ */
-#endif
 
 #if __BYTE_ORDER == __BIG_ENDIAN
 # define cpu_to_le16 bswap_16
@@ -138,14 +107,6 @@ static inline bool __must_check IS_ERR_OR_NULL(__force const void *ptr)
 # define be32_to_cpu bswap_32
 #endif
 
-#pragma pack(push)
-#pragma pack(1)
-
-/* Program's actions aren't necessarily performed in command-line order.
- * Bit flags keep track of options set or cleared during input parsing,
- * then are singularly checked as actions are performed.  Some actions
- * (such as writing) don't have corresponding bits here; certain non-NULL
- * string values indicate such actions should occur. */
 enum actions {
     ACTION_CHECK        = 1 << 0,
     ACTION_UNLOCK       = 1 << 1,
@@ -158,31 +119,7 @@ enum actions {
 
 #define DEFAULT_VENDOR_ID   ((uint16_t)0x04d8)
 #define DEFAULT_PRODUCT_ID  ((uint16_t)0x003c)
-#if 0
-char *a =
-"%s v" VERSION ": a Microchip PIC USB HID Bootloader utility\n"
-"\n"
-"-w, --write <file>\n"
-"                Write hex file to device (implies --erase --verify).\n"
-"-e, --erase     Erase program (non-volatile) memory.\n"
-"-E, --no-erase  Do not erase (only meaningful with --write).\n"
-"-s, --sign      Sign firmware image (recent PIC bootloaders).\n"
-"-r, --reset     Reset device.\n"
-"-v, --verify    Verify program memory.  When used without --write, will\n"
-"                check if hex file has already been programmed.\n"
-"-V, --no-verify Do not perform verfication (only meaningful with --write)\n"
-"-u, --unlock    Unlock configuration memory before erase/write and allow\n"
-"                hex file to overwrite configuration bytes\n"
-"-v, --vid <hex> USB device vendor ID  (default %04hx)\n"
-"-p, --pid <hex> USB device product ID (default %04hx)\n"
-"-C, --no-color  No pretty colors.\n"
-"-d, --debug [category[,category]]\n"
-"                Enable debuging.  Optional (additional) catagories are:\n"
-"                    general    \n"
-"                    hex        display hex file as it is parsed\n"
-"                    urbs       display all in and out URBs to the bootloader\n"
-"-h, --help      Help\n";
-#endif
+
 
 struct options {
     const char *file_name;
@@ -190,23 +127,37 @@ struct options {
     uint16_t idProduct;
     uint32_t bus;
     uint8_t devnum;
+
+    /** The actions that are to be performed. */
     enum actions actions;
+
+    /**
+     * Options that were explicitly selected at the command line or, after
+     * command line parsing, were assigned as default values.
+     */
     union {
-        int opts;
+        int flags;
         struct {
+            /* Actions */
             int check:1;
             int unlock:1;
             int erase:1;
-            int no_erase:1;
             int write:1;
             int verify:1;
-            int no_verify:1;
             int sign:1;
             int reset:1;
+
+            /* Anti-actions */
+            int no_erase:1;
+            int no_verify:1;
+
+            /* Flags to indicate if a data item is populated. */
             int have_bus:1;
             int have_devnum:1;
             int have_vid:1;
             int have_pid:1;
+
+            /* Debugging and output */
             int debug:1;
             int debug_hex:1;
             int debug_urbs:1;
@@ -217,88 +168,111 @@ struct options {
 
 const struct options *get_opts(void);
 
+static inline void debug0(const char *const fmt, ...)
+{
+    if (get_opts()->debug) {
+        va_list argp;
+
+        va_start(argp, fmt);
+        vfprintf(stderr, fmt, argp);
+        va_end(argp);
+    }
+}
+
+#define debug(fmt, ...) debug0("debug: %s: " fmt, __FUNCTION__, ##__VA_ARGS__)
+#define info(fmt, ...) fprintf(stderr, "info: %s: " fmt, __FUNCTION__, ##__VA_ARGS__)
+#define warn(fmt, ...) fprintf(stderr, "warning: %s: " fmt, __FUNCTION__, ##__VA_ARGS__)
+#define err(fmt, ...)  fprintf(stderr, "ERROR: %s: " fmt, __FUNCTION__, ##__VA_ARGS__)
+#define sim(fmt, ...)  fprintf(stderr, "simulation: " fmt, ##__VA_ARGS__)
+#define fail(fmt, ...) do {err(fmt, ##__VA_ARGS__); exit(-1);} while (0)
 
 #define USB_PACKET_SIZE             0x40
 #define MAX_REQUEST_DATA_BLOCK_SIZE 0x3a
 #define PIC_ERASE_VALUE             0xff
 
+#pragma pack(push)
+#pragma pack(1)
+
 /** protocol struct copied from bootloader, reformatted and with fixed size types. */
 struct pic_usb_hid_packet {
-	union {
-		uint8_t cmd;
-		uint8_t Contents[USB_PACKET_SIZE];
-		char char_arr[USB_PACKET_SIZE];
+    union {
+        uint8_t cmd;
+        uint8_t Contents[USB_PACKET_SIZE];
+        char char_arr[USB_PACKET_SIZE];
 
-		/**
-		 * General command (with data in it) packet structure used by
-		 * PROGRAM_DEVICE and GET_DATA commands
-		 */
-		struct {
-			uint8_t Command;
-			uint32_t Address;
-			uint8_t Size;
-			uint8_t Data[MAX_REQUEST_DATA_BLOCK_SIZE];
-		} data;
+        /**
+         * General command (with data in it) packet structure used by
+         * PROGRAM_DEVICE and GET_DATA commands
+         */
+        struct {
+            uint8_t Command;
+            uint32_t Address;
+            uint8_t Size;
+            uint8_t Data[MAX_REQUEST_DATA_BLOCK_SIZE];
+        } data;
 
-		/**
-		 * This struct used for responding to QUERY_DEVICE command (on a device
-		 * with four programmable sections)
-		 */
-		struct pic_info {
-			uint8_t Command;
-			uint8_t PacketDataFieldSize;
+        /**
+         * This struct used for responding to QUERY_DEVICE command (on a device
+         * with four programmable sections)
+         */
+        struct pic_info {
+            uint8_t Command;
+            uint8_t PacketDataFieldSize;
 
-			/* FIXME: This field may have once been the product family, so we
-			 * may need different behaviour for older versions of the
-			 * bootloader code.
-			 */
-			uint8_t BytesPerAddress;
-			struct pic_info_mem {
-				uint8_t Type;
-				uint32_t Address;
-				uint32_t Length;
-			} mem[6];
+            /* FIXME: This field may have once been the product family, so we
+             * may need different behaviour for older versions of the
+             * bootloader code.
+             */
+            uint8_t BytesPerAddress;
+            struct pic_info_mem {
+                uint8_t Type;
+                uint32_t Address;
+                uint32_t Length;
+            } mem[6];
 
-			/* Used by host software to identify if device is new enough to
-			 * support QUERY_EXTENDED_INFO command */
-			uint8_t VersionFlag;
-			uint8_t pad[7];
-		} info;
+            /* Used by host software to identify if device is new enough to
+             * support QUERY_EXTENDED_INFO command */
+            uint8_t VersionFlag;
+            uint8_t pad[7];
+        } info;
 
-		/** For UNLOCK_CONFIG command */
-		struct {
-			uint8_t Command;
-			uint8_t LockValue;
-		} lock;
+        /** For UNLOCK_CONFIG command */
+        struct {
+            uint8_t Command;
+            uint8_t LockValue;
+        } lock;
 
-		/** Structure for the QUERY_EXTENDED_INFO command (and response) */
-		struct pic_ext_info {
-			uint8_t Command;
-			uint16_t BootloaderVersion;
-			uint16_t ApplicationVersion;
-			uint32_t SignatureAddress;
-			uint16_t SignatureValue;
-			uint32_t ErasePageSize;
-			struct {
-				uint8_t low;
-				uint8_t high;
-			} config_mask[7];
-		} ext_info;
-	};
+        /** Structure for the QUERY_EXTENDED_INFO command (and response) */
+        struct pic_ext_info {
+            uint8_t Command;
+            uint16_t BootloaderVersion;
+            uint16_t ApplicationVersion;
+            uint32_t SignatureAddress;
+            uint16_t SignatureValue;
+            uint32_t ErasePageSize;
+            struct {
+                uint8_t low;
+                uint8_t high;
+            } config_mask[7];
+        } ext_info;
+    };
 
-	/** True if endianness of packet is the host CPU, false if remote. */
-	bool is_host_endianness;
+    /** True if endianness of packet is the host CPU, false if remote. */
+    bool is_host_endianness;
 };
 
 /**
  * A binary representation of an Intel HEX record.  While the Microchip tools
  * only write records with up to 58 data bytes, the standard actually supports
  * up to 255, so this should (in theory) work with a .hex file generated
- * from any other program that compiles with the Intel HEX standard.
+ * from any other program that compiles with the Intel HEX standard and
+ * conforms with the memory layout of the target.
  */
 struct hex_record {
     /** The address in host cpu endianness */
     uint16_t addr;
+
+    /** Size of the record. */
     uint16_t rec_size;
     union {
         uint8_t bytes[259];

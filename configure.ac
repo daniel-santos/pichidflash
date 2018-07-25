@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([picus_behid],[1.7.0],[daniel.santos@pobox.com])
+AC_INIT([pic_usb_hid_tool],[1.0.0],[daniel.santos@pobox.com])
 AC_CONFIG_SRCDIR([usb-libusb.c])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIRS([m4])
@@ -21,7 +21,8 @@ PKG_PROG_PKG_CONFIG
 PKG_CHECK_MODULES(LIBUSB, libusb)
 
 # Checks for header files.
-AC_CHECK_HEADERS([stdbool.h stddef.h fcntl.h string.h unistd.h])
+AC_CHECK_HEADERS([stddef.h fcntl.h string.h unistd.h])
+AC_CHECK_HEADER_STDBOOL
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_SIZE_T
