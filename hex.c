@@ -11,8 +11,8 @@
 
  License     : Copyright (C) 2009 Phillip Burgess
                Copyright (C) 2009 Thomas Fischl, Dominik Fisch (www.FundF.net)
-               Copyright (C) 2018 Daniel Santos, Global Sattelite Engineering
-                             (www.gsat.us)
+               Copyright (C) 2018 Daniel Santos <daniel.santos@pobox.com>
+                                  Global Sattelite Engineering (www.gsat.us)
 
                This file is part of 'mphidflash' program.
 
@@ -263,6 +263,8 @@ int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl,
 
     fprintf(stderr, "\n\%s hex...\n\n", pass_names[pass]);
 
+    bl_set_simulation_mode(bl, pass == PASS_VALIDATE);
+
     /* Each line in file */
     for (state.line = 0; p < end; ++state.line) {
         state.line_start = p;
@@ -319,7 +321,7 @@ int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl,
         switch (r.type) {
         case TYPE_DATA:
             if (pass != PASS_VERIFY) {
-                if ((ret = bl_write_data(bl, &state, &r, pass == PASS_VALIDATE))) {
+                if ((ret = bl_write_data(bl, &state, &r))) {
                     err("Failure at line %u of %s\n", state.line, hex->name);
                     return -1;
                 }
@@ -372,7 +374,7 @@ int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl,
                  * already have this covered, but in the freak case of an
                  * extended address record with no subsequent data, make sure
                  * the last of the data is issued.  */
-                if ((ret = bl_program_complete(bl, pass == PASS_VALIDATE)))
+                if ((ret = bl_program_complete(bl)))
                     return ret;
             }
             break;
@@ -394,7 +396,7 @@ int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl,
 done:
     /* Flush buffers and commit any final writes. */
     if (pass != PASS_VERIFY) {
-        if ((ret = bl_program_complete(bl, pass == PASS_VALIDATE)))
+        if ((ret = bl_program_complete(bl)))
             return ret;
     }
     return 0;

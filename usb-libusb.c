@@ -12,8 +12,8 @@
 
  License     : Copyright (C) 2009 Phillip Burgess
                Copyright (C) 2009 Thomas Fischl, Dominik Fisch (www.FundF.net)
-               Copyright (C) 2018 Daniel Santos, Global Sattelite Engineering
-                             (www.gsat.us)
+               Copyright (C) 2018 Daniel Santos <daniel.santos@pobox.com>
+                                  Global Sattelite Engineering (www.gsat.us)
 
                This file is part of 'mphidflash' program.
 
@@ -50,39 +50,48 @@ enum bl_commands {
      * Query device information and store in struct pic_usb_hid_packet::info.
      */
     CMD_QUERY_DEVICE        = 0x02,
+
     /**
      * Lock or unlock configuration bits.
      */
     CMD_UNLOCK_CONFIG       = 0x03,
+
     /**
      * Start an erase operation.  The firmware controls which pages will be
      * erased.  This command takes a while to complete and the firmware will
      * not respond to other commands until it's finished (which is why we need
-     * a larger than usual timeout value).
+     * a larger than usual timeout value for USB communications).
      */
     CMD_ERASE_DEVICE        = 0x04,
+
     /**
-     * If host is going to send a full RequestDataBlockSize to be programmed,
-     * it uses this command.
+     * Write data to device non-volatile program memory.  Calls to this command
+     * must be terminated by a call to CMD_PROGRAM_DEVICE.  The reason for this
+     * is that the bootloader queues up data until it can write an entire erase
+     * block at once.
      */
     CMD_PROGRAM_DEVICE      = 0x05,
-    /* If host send less than a RequestDataBlockSize to be programmed, or if
-     * it wished to program whatever was left in the buffer, it uses this
-     * command.
+
+    /**
+     * Causes the bootloader to flush it's receive cache and write all
+     * remaining data sent via CMD_PROGRAM_DEVICE to program flash.
      */
     CMD_PROGRAM_COMPLETE    = 0x06,
+
     /**
-     * The host sends this command in order to read out memory from the device.
-     * Used during verify (and read/export hex operations)
+     * Read program memory from device.
      */
     CMD_GET_DATA            = 0x07,
+
     /**
      * Resets the microcontroller, so it can update the config bits (if they
      * were programmed, and so as to leave the bootloader (and potentially go
      * back into the main application)
      */
     CMD_RESET_DEVICE        = 0x08,
-    /**The host PC application should send this command after the verify
+
+    /**
+     * The host PC application should send this command after the verify
      * operation has completed successfully.  If checksums are used instead of
      * a true verify (due to ALLOW_GET_DATA_COMMAND being commented), then the
      * host PC application should send SIGN_FLASH command after is has verified
@@ -90,6 +99,7 @@ enum bl_commands {
      * SIGNATURE_WORD into flash at the SIGNATURE_ADDRESS.
      */
     CMD_SIGN_FLASH          = 0x09,
+
     /**
      * Used by host PC app to get additional info about the device, beyond the
      * basic NVM layout provided by the query device command
@@ -357,7 +367,7 @@ static struct usb_dev_handle *find_and_open_usb(void) {
     if (!(h = usb_open(match))) {
         ret = -errno;
         perror("usb_open");
-        err("Warning: matching device found, but " "cannot open usb device: %s\n", usb_strerror());
+        err("Failed to open device: %s\n", usb_strerror());
     }
 
     if ((ret = usb_claim_interface(h, 0))) {
@@ -397,10 +407,26 @@ struct usb_hid_bootloader *bl_open(void) {
     return bl;
 }
 
+/**
+ * When entering or leaving simulation mode we must finalize any writes.
+ */
+void bl_set_simulation_mode(struct usb_hid_bootloader *bl, bool enabled)
+{
+    if (bl->simulating == enabled)
+        return;
+
+    if (bl->writing || bl->dirty)
+        bl_program_complete(bl);
+    bl->simulating = enabled;
+}
+
 static int bl_submit(struct usb_hid_bootloader *bl, const unsigned char len,
                      bool do_read)
 {
     int ret;
+
+    if (bl->simulating)
+        return 0;
 
     if (get_opts()->debug_urbs)
         pic_usb_hid_packet_dump(&bl->buf, true);
@@ -505,10 +531,9 @@ int bl_erase(struct usb_hid_bootloader *bl) {
     return ret;
 }
 
-static int bl_flush(struct usb_hid_bootloader *bl, bool simulate_only) {
+static int bl_flush(struct usb_hid_bootloader *bl) {
     int ret;
     int offset;
-    //uint32_t addr_next;
 
     if (!bl->dirty)
         return 0;
@@ -521,7 +546,7 @@ static int bl_flush(struct usb_hid_bootloader *bl, bool simulate_only) {
      */
     if (bl->buf.data.Size & 1) {
         uint32_t stupid_addr = bl->buf.data.Address + bl->buf.data.Size;
-        if (simulate_only)
+        if (bl->simulating)
             sim("writing Stupid Byte(TM) to 0x%08x\n", stupid_addr);
         else
             warn("Writing Stupid Byte(TM) to 0x%08x because record "
@@ -553,11 +578,11 @@ static int bl_flush(struct usb_hid_bootloader *bl, bool simulate_only) {
     if (bl->info.BytesPerAddress > 1)
         bl->buf.data.Address /= bl->info.BytesPerAddress;
 
-    if (simulate_only)
+    if (bl->simulating)
         sim("writing %u bytes to 0x%08x\n", bl->buf.data.Size, bl->buf.data.Address);
     else
         debug("addr=0x%08x, size=%u\n", bl->buf.data.Address, bl->buf.data.Size);
-    if (!simulate_only && (ret = bl_submit(bl, 64, false))) {
+    if ((ret = bl_submit(bl, 64, false))) {
         err("PROGRAM_DEVICE command failed and it's probably your fault.  "
             "What did you do!?\n");
         /* OK, not really, but there should be more than enough blame to
@@ -572,20 +597,20 @@ static int bl_flush(struct usb_hid_bootloader *bl, bool simulate_only) {
 }
 
 /** Flush write buffer and submit CMD_PROGRAM_COMPLETE if neccesary.  */
-int bl_program_complete(struct usb_hid_bootloader *bl, bool simulate_only) {
+int bl_program_complete(struct usb_hid_bootloader *bl) {
     int ret;
-    if (bl->dirty && (ret = bl_flush(bl, simulate_only))) {
+    if (bl->dirty && (ret = bl_flush(bl))) {
         err("Flushing write buffer failed.\n");
         return ret;
     }
 
     if (bl->writing) {
         bl->buf.cmd = CMD_PROGRAM_COMPLETE;
-        if (simulate_only)
+        if (bl->simulating)
             sim("Sending CMD_PROGRAM_COMPLETE\n");
         else
             debug("\n");
-        if (!simulate_only && (ret = bl_submit(bl, 1, false))) {
+        if ((ret = bl_submit(bl, 1, false))) {
             err("PROGRAM_COMPLETE command failed.\n");
             return ret;
         }
@@ -599,10 +624,12 @@ int bl_program_complete(struct usb_hid_bootloader *bl, bool simulate_only) {
     return 0;
 }
 
-/* Write program data to our output buffer until full or we need to flush to
- * the device. */
+/**
+ * Write program data to our output buffer until full or we need to flush to
+ * the device.
+ */
 int bl_write_data(struct usb_hid_bootloader *bl, struct parse_state *state,
-                  const struct hex_record *r, bool simulate_only) {
+                  const struct hex_record *r) {
     int ret, type;
     uint32_t room;
     uint32_t in_offset;
@@ -631,15 +658,12 @@ int bl_write_data(struct usb_hid_bootloader *bl, struct parse_state *state,
      * address then we must flush and issue a completion.  The same is true if
      * we've had to write a Stupid Byte.  */
     if (((bl->writing || bl->dirty) && bl->next_addr != addr) || bl->stupid_byte_written)
-        bl_program_complete(bl, simulate_only);
+        bl_program_complete(bl);
 
     for (in_offset = 0; in_offset < r->size;) {
         uint32_t bytes_this_write = r->size - in_offset;
 
         if (!bl->dirty) {
-#ifdef DEBUG
-            memset(&buf->data, 0, sizeof(buf->data));
-#endif
             buf->data.Command = CMD_PROGRAM_DEVICE;
             buf->data.Address = addr;
             buf->data.Size = 0;
@@ -660,7 +684,7 @@ int bl_write_data(struct usb_hid_bootloader *bl, struct parse_state *state,
 
         assert(buf->data.Size <= bl->info.PacketDataFieldSize);
         if (buf->data.Size == bl->info.PacketDataFieldSize)
-            if ((ret = bl_flush(bl, simulate_only)))
+            if ((ret = bl_flush(bl)))
                 return ret;
 
         in_offset += bytes_this_write;

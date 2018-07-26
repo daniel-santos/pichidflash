@@ -15,6 +15,8 @@
  License     : Copyright (C) 2009 Phillip Burgess
                Copyright (C) 2009 Thomas Fischl, Dominik Fisch (www.FundF.net)
                Copyright (C) 2010 Petr Olivka
+               Copyright (C) 2018 Daniel Santos <daniel.santos@pobox.com>
+                                  Global Sattelite Engineering (www.gsat.us)
 
                This file is part of 'mphidflash' program.
 
@@ -318,6 +320,11 @@ struct usb_hid_bootloader {
      * CMD_PROGRAM_COMPLETE.  When true, next_addr will be valid.
      */
     uint8_t writing:1;
+
+    /**
+     * True when the dirty or writing flag are the result of a practice run.
+     */
+    uint8_t simulating:1;
     uint8_t protect_config:1;
     uint8_t stupid_byte_written:1;
     uint8_t ignore_config:1;
@@ -396,12 +403,13 @@ static inline int hex_file_verify(struct hex_file *hex, struct usb_hid_bootloade
 
 /* Functions defined in usb-hid-bootloader.c */
 struct usb_hid_bootloader *bl_open(void);
+void bl_set_simulation_mode(struct usb_hid_bootloader *bl, bool enabled);
 void bl_protect_config(struct usb_hid_bootloader *bl);
 int bl_lock_unlock_config(struct usb_hid_bootloader *bl, bool locked);
 int bl_erase(struct usb_hid_bootloader *bl);
 int bl_write_data(struct usb_hid_bootloader *bl, struct parse_state *state,
-                  const struct hex_record *r, bool simulate_only);
-int bl_program_complete(struct usb_hid_bootloader *bl, bool simulate_only);
+                  const struct hex_record *r);
+int bl_program_complete(struct usb_hid_bootloader *bl);
 const void *bl_get_data(struct usb_hid_bootloader *bl, uint32_t addr,
                         uint8_t size);
 int bl_reset(struct usb_hid_bootloader *bl);
