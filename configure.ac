@@ -8,12 +8,22 @@ AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIRS([m4])
 AC_CONFIG_AUX_DIR([autoscripts])
 AC_CANONICAL_TARGET
+AC_CANONICAL_HOST
 AM_INIT_AUTOMAKE
+
+# Detect the target system
+case "${target_os}" in
+    cygwin*|mingw*)
+        AC_DEFINE(TARGET_WINDOWS, 1, [Build target is Windows])
+        ;;
+    darwin*)
+        AC_DEFINE(TARGET_OSX, 1, [Build target is Mac])
+        ;;
+esac
 
 # Checks for programs.
 AC_PROG_CC
 AC_PROG_INSTALL
-
 AC_C_INLINE
 
 # Checks for libraries.
@@ -40,12 +50,11 @@ AC_ARG_ENABLE([debug],
         colorizing, and printing URBs and .hex file records that are useful
         when troubleshooting bootloader problems, but make the executable
         larger.]),
-    [] ,
+    [],
     [enable_debug=yes])
 
 if test x"$enable_debug" = xyes ; then
-   AC_DEFINE(VERBOSE_DEBUG, 1 , TODO)
-   AC_SUBST(VERBOSE_DEBUG)
+    AC_DEFINE(VERBOSE_DEBUG, 1, [Disable to trim code size a little bit.])
 fi
 
 AC_CONFIG_FILES([Makefile])

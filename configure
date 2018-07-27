@@ -626,7 +626,6 @@ ac_header_list=
 ac_subst_vars='am__EXEEXT_FALSE
 am__EXEEXT_TRUE
 LTLIBOBJS
-VERBOSE_DEBUG
 LIBOBJS
 EGREP
 GREP
@@ -2437,6 +2436,7 @@ test -n "$target_alias" &&
   test "$program_prefix$program_suffix$program_transform_name" = \
     NONENONEs,x,x, &&
   program_prefix=${target_alias}-
+
 am__api_version='1.15'
 
 # Find a good install program.  We prefer a C program (faster),
@@ -3016,6 +3016,20 @@ END
   fi
 fi
 
+
+# Detect the target system
+case "${target_os}" in
+    cygwin*|mingw*)
+
+$as_echo "#define TARGET_WINDOWS 1" >>confdefs.h
+
+        ;;
+    darwin*)
+
+$as_echo "#define TARGET_OSX 1" >>confdefs.h
+
+        ;;
+esac
 
 # Checks for programs.
 ac_ext=c
@@ -4055,7 +4069,6 @@ else
   am__fastdepCC_TRUE='#'
   am__fastdepCC_FALSE=
 fi
-
 
 
 
@@ -5160,8 +5173,7 @@ fi
 
 if test x"$enable_debug" = xyes ; then
 
-$as_echo "#define VERBOSE_DEBUG 1 " >>confdefs.h
-
+$as_echo "#define VERBOSE_DEBUG 1" >>confdefs.h
 
 fi
 

@@ -92,7 +92,7 @@ PACKAGE_TARNAME " v" VERSION ": a Microchip PIC USB HID Bootloader utility\n"
 
 static void print_options(const char *argv0)
 {
-    fprintf(stderr, help_str, DEFAULT_VENDOR_ID, DEFAULT_PRODUCT_ID);
+    fprintf(stderr, help_str, DEFAULT_ID_VENDOR, DEFAULT_ID_PRODUCT);
     exit(-1);
 }
 
@@ -258,8 +258,8 @@ int main(int argc, char *argv[]) {
 
     /* Supply default vid:pid unless --slot was used. */
     if (!(opts.have_bus && opts.have_devnum)) {
-        opts.idVendor  = DEFAULT_VENDOR_ID;
-        opts.idProduct = DEFAULT_PRODUCT_ID;
+        opts.idVendor  = DEFAULT_ID_VENDOR;
+        opts.idProduct = DEFAULT_ID_PRODUCT;
         opts.have_vid  = true;
         opts.have_pid  = true;
     }

@@ -139,54 +139,13 @@ struct hex_file *hex_file_open(const char *const name)
     hex->name_len = name_len;
     strcpy((char*)hex->name, name);
 
-    if ((hex->fd = open(name, O_RDONLY)) < 0) {
-        ret = errno;
-        perror("open");
-        goto exit_free;
+    ret = open_stat_mmap_file(name, &hex->stat, (const void**) &hex->data);
+    if (ret > 0)
+        return hex;
+    else {
+        free(hex);
+        return ERR_PTR(-ret);
     }
-
-    if (fstat(hex->fd, &hex->stat)) {
-        ret = errno;
-        perror("fstat");
-        goto exit_close;
-    }
-
-#ifndef WIN
-    hex->data = mmap(0, hex->stat.st_size, PROT_READ, MAP_FILE | MAP_SHARED,
-                     hex->fd, 0);
-    if (hex->data == MAP_FAILED) {
-        ret = errno;
-        perror("mmap");
-        goto exit_close;
-    }
-#else
-    {
-        HANDLE h = CreateFileMapping((HANDLE)_get_osfhandle(hex->fd),
-                                     NULL, PAGE_WRITECOPY, 0, 0, NULL);
-        if (!h) {
-            err("CreateFileMapping of file %s failed with %u\n", hex->name,
-                GetLastError());
-            goto exit_close;
-        }
-
-        hex->data = MapViewOfFile(h, FILE_MAP_COPY, 0, 0, hex->size);
-        ret = GetLastError();
-        CloseHandle(h);
-        if (!hex->data) {
-            err("MapViewOfFile of file %s failed with %u\n", hex->name, ret);
-            goto exit_close;
-        }
-    }
-#endif
-
-    return hex;
-
-exit_close:
-    close (hex->fd);
-
-exit_free:
-    free (hex);
-    return ERR_PTR(-ret);
 }
 
 /**

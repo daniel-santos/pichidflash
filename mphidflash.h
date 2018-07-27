@@ -119,9 +119,8 @@ enum actions {
     ACTION_RESET        = 1 << 6,
 };
 
-#define DEFAULT_VENDOR_ID   ((uint16_t)0x04d8)
-#define DEFAULT_PRODUCT_ID  ((uint16_t)0x003c)
-
+#define DEFAULT_ID_VENDOR   ((uint16_t)0x04d8)
+#define DEFAULT_ID_PRODUCT  ((uint16_t)0x003c)
 
 struct options {
     const char *file_name;
@@ -425,5 +424,8 @@ static inline int bl_unlock_config(struct usb_hid_bootloader *bl) {
     return bl_lock_unlock_config(bl, false);
 }
 
+/* port.c */
+int open_stat_mmap_file(const char *const name, struct stat *stat,
+                        const void **data);
 
 #endif /* _MPHIDFLASH_H_ */
