@@ -25,7 +25,6 @@ int open_stat_mmap_file(const char *const name, struct stat *stat,
 {
     int ret;
     int fd;
-    size_t name_len = strlen(name);
 
     assert(fd && stat && data);
 
@@ -68,6 +67,8 @@ int open_stat_mmap_file(const char *const name, struct stat *stat,
             goto exit_close;
         }
     }
+#else
+# error
 #endif
 
     return fd;
@@ -75,4 +76,16 @@ int open_stat_mmap_file(const char *const name, struct stat *stat,
 exit_close:
     close (fd);
     return -ret;
+}
+
+void close_unmap_file(int fd, const void *data, size_t data_size)
+{
+#if defined(HAVE_MMAP) && defined(HAVE_MUNMAP)
+    munmap((void*)data, data_size);
+#elif defined(TARGET_WINDOWS)
+    UnmapViewOfFile(data);
+#else
+# error
+#endif
+    close(fd);
 }

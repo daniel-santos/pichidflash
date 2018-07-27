@@ -295,7 +295,7 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    printf("USB HID device found...\n");
+    info("USB HID device found...\n");
 
     /* And start doing stuff... */
 
@@ -303,59 +303,59 @@ int main(int argc, char *argv[]) {
         fail("Device query failed.\n");
 
     if (bl->free_program_memory)
-        printf("%d bytes free\n", bl->free_program_memory);
+        info("%d bytes free\n", bl->free_program_memory);
 
     putchar('\n');
 
     if (opts.actions & ACTION_CHECK) {
-        printf("Reading file '%s'...", hex->name);
+        info("Reading file '%s'...", hex->name);
         if (hex_file_validate(hex, bl))
             fail("\nFailed to parse file %s.\n",opts.file_name);
-        puts("done\n");
+        info("done\n");
     }
 
     if (opts.actions & ACTION_UNLOCK) {
-        puts("Unlocking configuration...");
+        info("Unlocking configuration...");
         if (bl_unlock_config(bl))
             fail("Unlock command failed.\n");
-        puts("done\n");
+        info("done\n");
     } else
         /* Otherwise make sure we don't try to modify it. */
         bl_protect_config(bl);
 
     if (opts.actions & ACTION_ERASE) {
-        puts("Erasing...");
+        info("Erasing...");
         if (bl_erase(bl))
             fail("Erase failed");
-        puts("done\n");
+        info("done\n");
     }
 
      if (opts.actions & ACTION_WRITE) {
-        printf("Writing hex file '%s':", opts.file_name);
+        info("Writing hex file '%s':", opts.file_name);
         if (hex_file_write(hex, bl))
             fail("\nFlashing failed.");
-        putchar('\n');
+        info("\n");
     }
 
     if (hex && (opts.actions & ACTION_VERIFY)) {
-        printf("Verifying...");
+        info("Verifying...");
         if (hex_file_verify(hex, bl))
             fail("\nVeryfing failed.");
-        puts("done\n");
+        info("done\n");
     }
 
     if (opts.actions & ACTION_SIGN) {
-        puts("Signing image...");
+        info("Signing image...");
         if (bl_sign(bl))
             fail("Signing failed.");
-        puts("done\n");
+        info("done\n");
     }
 
     if (opts.actions & ACTION_RESET) {
-        puts("Resetting device...");
+        info("Resetting device...");
         if (bl_reset(bl))
             fail("Reset failed.\n");
-        puts("done\n");
+        info("done\n");
     }
 
     bl_close(bl);

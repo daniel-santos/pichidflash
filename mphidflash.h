@@ -427,5 +427,5 @@ static inline int bl_unlock_config(struct usb_hid_bootloader *bl) {
 /* port.c */
 int open_stat_mmap_file(const char *const name, struct stat *stat,
                         const void **data);
-
+void close_unmap_file(int fd, const void *data, size_t data_size);
 #endif /* _MPHIDFLASH_H_ */

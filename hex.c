@@ -367,13 +367,7 @@ bad_hex:
 }
 
 void hex_close(struct hex_file *hex) {
-#ifndef WIN
-    munmap((void*)hex->data, hex->stat.st_size);
-#else
-    UnmapViewOfFile(hex->data);
-#endif
-    hex->data = NULL;
-    close(hex->fd);
+    close_unmap_file(hex->fd, hex->data, hex->stat.st_size);
     free(hex);
 }
 
