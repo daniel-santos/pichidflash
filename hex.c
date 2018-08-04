@@ -39,6 +39,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <assert.h>
 
 #include <sys/stat.h>
 #ifndef WIN
@@ -222,10 +223,8 @@ int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl,
 
     fprintf(stderr, "\n\%s hex...\n\n", pass_names[pass]);
 
-    bl_set_simulation_mode(bl, pass == PASS_VALIDATE);
-
     /* Each line in file */
-    for (state.line = 0; p < end; ++state.line) {
+    for (state.line = 1; p < end; ++state.line) {
         state.line_start = p;
         if (*(p++) != ':') {
             err("malformed start of line\n");
@@ -287,6 +286,7 @@ int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl,
             } else {
                 const void *data;
                 uint32_t addr = state.addr_hi + r.addr;
+
                 if (IS_ERR(data = bl_get_data(bl, addr, r.size))) {
                     int err = -PTR_ERR(data);
                     if (err == EAGAIN) {
@@ -300,9 +300,12 @@ int hex_file_parse(struct hex_file *hex, struct usb_hid_bootloader *bl,
                         return err;
                     }
                 }
+
                 if (memcmp(r.data, data, r.size)) {
                     err("Verification failure for record at line %u, addr "
                         "0x%08x\n", state.line, addr);
+                    hex_record_print(stderr, &state);
+                    fprintf(stderr, "       Expected                    Got\n");
                     show_diff(addr, r.size, r.data, data);
                     return -1;
                 }

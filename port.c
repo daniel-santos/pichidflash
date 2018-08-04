@@ -1,20 +1,19 @@
 
 
 
+#include "config.h"
 
-#include <stdlib.h>
 #include <stdio.h>
-#include <ctype.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <string.h>
 #include <errno.h>
 #include <assert.h>
 
 #include <sys/stat.h>
-#ifndef WIN
+
+#ifdef HAVE_MMAP
 # include <sys/mman.h>
-#else
+#elif defined(TARGET_WINDOWS)
 # include <windows.h>
 #endif
 
@@ -40,7 +39,7 @@ int open_stat_mmap_file(const char *const name, struct stat *stat,
         goto exit_close;
     }
 
-#if defined(HAVE_MMAP) && defined(HAVE_MUNMAP)
+#ifdef HAVE_MMAP
     *data = mmap(0, stat->st_size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
     if (*data == MAP_FAILED) {
         ret = errno;
@@ -80,7 +79,7 @@ exit_close:
 
 void close_unmap_file(int fd, const void *data, size_t data_size)
 {
-#if defined(HAVE_MMAP) && defined(HAVE_MUNMAP)
+#ifdef HAVE_MMAP
     munmap((void*)data, data_size);
 #elif defined(TARGET_WINDOWS)
     UnmapViewOfFile(data);

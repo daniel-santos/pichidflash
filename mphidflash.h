@@ -39,16 +39,17 @@
 #ifndef _MPHIDFLASH_H_
 #define _MPHIDFLASH_H_
 
+#include "config.h"
+
 #include <stdbool.h>
+#include <stdio.h>
 #include <usb.h>
 #include <stdarg.h>
 #include <byteswap.h>
 #include <stdint.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
-#include "config.h"
+#include <sys/stat.h>
+
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(*arr))
 

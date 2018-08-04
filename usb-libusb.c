@@ -32,12 +32,13 @@
                see <http://www.gnu.org/licenses/>.
 
  ****************************************************************************/
-#include <stdio.h>
+#include "config.h"
+
 #include <string.h>
-#include <usb.h>
 #include <errno.h>
 #include <assert.h>
 #include <stddef.h>
+#include <usb.h>
 
 #include "mphidflash.h"
 
@@ -410,14 +411,14 @@ struct usb_hid_bootloader *bl_open(void) {
 /**
  * When entering or leaving simulation mode we must finalize any writes.
  */
-void bl_set_simulation_mode(struct usb_hid_bootloader *bl, bool enabled)
+void bl_set_simulation_mode(struct usb_hid_bootloader *bl, bool enable_state)
 {
-    if (bl->simulating == enabled)
+    if (bl->simulating == enable_state)
         return;
 
     if (bl->writing || bl->dirty)
         bl_program_complete(bl);
-    bl->simulating = enabled;
+    bl->simulating = enable_state;
 }
 
 static int bl_submit(struct usb_hid_bootloader *bl, const unsigned char len,
@@ -432,6 +433,7 @@ static int bl_submit(struct usb_hid_bootloader *bl, const unsigned char len,
         pic_usb_hid_packet_dump(&bl->buf, true);
 
     packet_to_remote_endianness(&bl->buf);
+
     ret = usb_interrupt_write(bl->h, USB_ENDPOINT_OUT | 1, bl->buf.char_arr,
                               len, 5000);
     if (ret < 0) {

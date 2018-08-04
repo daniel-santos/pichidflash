@@ -38,14 +38,13 @@
 
  ****************************************************************************/
 
-#include <unistd.h>
+#include "config.h"
+
 #include <stdio.h>
-#include <string.h>
 #include <errno.h>
 #include <getopt.h>
 
 #include "mphidflash.h"
-#include "config.h"
 
 static struct options opts;
 
@@ -309,8 +308,10 @@ int main(int argc, char *argv[]) {
 
     if (opts.actions & ACTION_CHECK) {
         info("Reading file '%s'...", hex->name);
+        bl_set_simulation_mode(bl, true);
         if (hex_file_validate(hex, bl))
             fail("\nFailed to parse file %s.\n",opts.file_name);
+        bl_set_simulation_mode(bl, false);
         info("done\n");
     }
 
