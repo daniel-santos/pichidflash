@@ -4,9 +4,9 @@ CFLAGS ?= -O2 -g3
 CFLAGS += -Wall -Wextra -Wno-unused-parameter -Werror
 LIBUSB_LIBS ?= -lusb
 
-bin_PROGRAMS = pic_usb_flash
-pic_usb_flash_SOURCES = main.c hex.c usb-libusb.c port.c
-pic_usb_flash_include_HEADERS = mphidflash.h
-pic_usb_flash_includedir = .
-pic_usb_flash_CFLAGS = $(LIBUSB_CFLAGS)
-pic_usb_flash_LDADD = $(LIBUSB_LIBS)
+bin_PROGRAMS = pichidflash
+pichidflash_SOURCES = main.c hex.c usb-libusb.c port.c
+pichidflash_include_HEADERS = mphidflash.h
+pichidflash_includedir = .
+pichidflash_CFLAGS = $(LIBUSB_CFLAGS)
+pichidflash_LDADD = $(LIBUSB_LIBS)
