@@ -11,7 +11,8 @@
 
 #include <sys/stat.h>
 
-#ifdef HAVE_MMAP
+#ifdef HAVE_MUNMAP
+/* AC_FUNC_MMAP broken when cross-compiling */
 # include <sys/mman.h>
 #elif defined(TARGET_WINDOWS)
 # include <windows.h>
@@ -39,7 +40,7 @@ int open_stat_mmap_file(const char *const name, struct stat *stat,
         goto exit_close;
     }
 
-#ifdef HAVE_MMAP
+#ifdef HAVE_MUNMAP
     *data = mmap(0, stat->st_size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
     if (*data == MAP_FAILED) {
         ret = errno;
@@ -79,7 +80,7 @@ exit_close:
 
 void close_unmap_file(int fd, const void *data, size_t data_size)
 {
-#ifdef HAVE_MMAP
+#ifdef HAVE_MUNMAP
     munmap((void*)data, data_size);
 #elif defined(TARGET_WINDOWS)
     UnmapViewOfFile(data);
