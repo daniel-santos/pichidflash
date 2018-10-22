@@ -32,5 +32,5 @@ mkdir ${auxdir} m4 2>/dev/null
 aclocal
 autoheader
 autoconf
-automake --add-missing
+automake -c --add-missing
 
