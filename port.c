@@ -26,7 +26,7 @@ int open_stat_mmap_file(const char *const name, struct stat *stat,
     int ret;
     int fd;
 
-    assert(fd && stat && data);
+    assert(name && stat && data);
 
     if ((fd = open(name, O_RDONLY)) < 0) {
         ret = errno;
