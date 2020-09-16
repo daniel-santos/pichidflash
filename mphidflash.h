@@ -120,6 +120,30 @@ enum actions {
     ACTION_RESET        = 1 << 6,
 };
 
+#if 1
+static const char actions_str[7][7] = {
+    {"CHECK"},
+    {"UNLOCK"},
+    {"ERASE"},
+    {"WRITE"},
+    {"VERIFY"},
+    {"SIGN"},
+    {"RESET"},
+};
+#endif
+
+#if 0
+const char actions_str[7 * 7] = {
+    "CHECK\0\0"
+    "UNLOCK\0"
+    "ERASE\0\0"
+    "WRITE\0\0"
+    "VERIFY\0"
+    "SIGN\0\0\0"
+    "RESET\0"
+}
+#endif
+
 #define DEFAULT_ID_VENDOR   ((uint16_t)0x04d8)
 #define DEFAULT_ID_PRODUCT  ((uint16_t)0x003c)
 
@@ -163,6 +187,7 @@ struct options {
             int debug:1;
             int debug_hex:1;
             int debug_urbs:1;
+            int debug_opts:1;
             int no_color:1;
         };
     };

@@ -331,11 +331,20 @@ static struct usb_dev_handle *find_and_open_usb(void) {
         return ERR_PTR(ret);
     }
 
+    if (opts->debug_urbs)
+	fprintf(stderr, "Enumerating USB...");
+
     for (bus = usb_get_busses(); bus; bus = bus->next) {
+	if (opts->debug_urbs)
+	    fprintf(stderr, "\n  bus %u...", bus->location);
+
         if (opts->have_bus && bus->location != opts->bus)
             continue;
 
         for (dev = bus->devices; dev; dev = dev->next) {
+	    if (opts->debug_urbs)
+		fprintf(stderr, "\n    %u:%u...", bus->location, dev->devnum);
+
             if (opts->have_devnum && dev->devnum != opts->devnum)
                 continue;
 
@@ -346,16 +355,25 @@ static struct usb_dev_handle *find_and_open_usb(void) {
                 continue;
 
             if (match) {
+		if (opts->debug_urbs)
+		    fputc('\n', stderr);
                 if (!too_many) {
                     too_many = true;
                     fprintf(stderr, "More than one match found.  Use one of the following to select the device\n");
                     fprintf(stderr, "        -s %u:%hhu\n", (int)match->bus->location, match->devnum);
                 }
                 fprintf(stderr, "        -s %u:%hhu\n", (int)bus->location, dev->devnum);
-            } else
+            } else {
                 match = dev;
+		if (opts->debug_urbs) {
+		    fprintf(stderr, " match found!");
+		}
+	    }
         }
     }
+
+    if (opts->debug_urbs)
+	fputc('\n', stderr);
 
     if (too_many)
         return ERR_PTR(-ENODEV);
@@ -365,12 +383,18 @@ static struct usb_dev_handle *find_and_open_usb(void) {
         return ERR_PTR(-ENODEV);
     }
 
+    if (opts->debug_urbs) {
+	fprintf(stderr, "dev->filename: %s\n", match->filename);
+	fprintf(stderr, "usb_open...\n");
+    }
     if (!(h = usb_open(match))) {
         ret = -errno;
         perror("usb_open");
         err("Failed to open device: %s\n", usb_strerror());
     }
 
+    if (opts->debug_urbs)
+	fprintf(stderr, "usb_claim_interface...\n");
     if ((ret = usb_claim_interface(h, 0))) {
 #ifdef LIBUSB_HAS_DETACH_KERNEL_DRIVER_NP
         if (ret == -EBUSY) {

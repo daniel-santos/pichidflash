@@ -40,6 +40,7 @@
 
 #include "config.h"
 
+#include <string.h>
 #include <stdio.h>
 #include <errno.h>
 #include <getopt.h>
@@ -47,6 +48,8 @@
 #include "mphidflash.h"
 
 static struct options opts;
+
+static void dump_opts(const struct options *opts);
 
 const struct options *get_opts(void)
 {
@@ -86,6 +89,7 @@ PACKAGE_TARNAME " v" VERSION ": a Microchip PIC USB HID Bootloader utility\n"
 "-U, --debug-urbs Dumps each in and out URB.  This is helpful when trying to\n"
 "                troubleshoot communications problems or debug the\n"
 "                bootloader.\n"
+"-O, --debug-opts Dump options and exit.\n"
 "-C, --no-color  No pretty colors.\n"
 "-h, --help      Help\n";
 
@@ -140,13 +144,14 @@ int main(int argc, char *argv[]) {
             {"debug",       no_argument,        0, 'd'},
             {"debug-hex",   no_argument,        0, 'H'},
             {"debug-urbs",  no_argument,        0, 'U'},
+            {"debug-opts",  no_argument,        0, 'O'},
             {"no-color",    no_argument,        0, 'C'},
             {"help",        no_argument,        0, 'h'},
             {0,             0,                  0, 0}
         };
 
 
-        c = getopt_long(argc, argv, "cuewvSrEVs:b:D:d:Ch", long_options, &option_index);
+        c = getopt_long(argc, argv, "cuewvSrEVs:b:D:dHUOCh", long_options, &option_index);
 
         if (c == -1)
             break;
@@ -226,6 +231,10 @@ int main(int argc, char *argv[]) {
             opts.debug_urbs = true;
             break;
 
+        case 'O':
+            opts.debug_opts = true;
+            break;
+
         case 'C':
             opts.no_color = true;
             break;
@@ -283,6 +292,11 @@ int main(int argc, char *argv[]) {
                                                         | ACTION_VERIFY))) {
         err("No input file specified.\n");
         print_options(argv[0]);
+    }
+
+    if (opts.debug_opts) {
+	dump_opts(&opts);
+	exit(0);
     }
 
     if (opts.file_name && !(hex = hex_file_open(opts.file_name)))
@@ -365,4 +379,105 @@ int main(int argc, char *argv[]) {
         hex_close(hex);
 
     return 0;
+}
+
+const char *format_actions(enum actions actions) {
+    static char buf[7 * 10] = { 0 };
+    size_t pos = 0;
+    int i;
+
+    for (i = 0; i < 7; ++i) {
+	if (actions & (1 << i)) {
+	    const char *name = actions_str[i];
+
+	    if (pos) {
+		strncat(buf + pos, " | ", sizeof(buf) - pos);
+		pos += 3;
+	    }
+
+	    strncat(buf + pos, name, sizeof(buf) - pos);
+	    pos += strlen(name);
+	}
+    }
+    buf[pos] = 0;
+    return buf;
+}
+
+static void dump_opts(const struct options *opts)
+{
+    fprintf(stderr,
+	    "struct options %p = {\n"
+	    "  file_name	= %s\n"
+	    "  idVendor	= 0x%04hx\n"
+	    "  idProduct	= 0x%04hx\n"
+	    "  bus\t	= %u\n"
+	    "  devnum	= %hhu\n"
+	    "  actions	= 0x%02x (%s)\n"
+	    "  flags\t	= 0x%08x {\n"
+	    "    /* Action flags */\n"
+	    "    check	= %u\n"
+	    "    unlock	= %u\n"
+	    "    erase	= %u\n"
+	    "    write	= %u\n"
+	    "    verify	= %u\n"
+	    "    sign	= %u\n"
+	    "    reset	= %u\n"
+	    "    /* Anti-action flags */\n"
+	    "    no_erase	= %u\n"
+	    "    no_verify	= %u\n"
+	    "    /* Data populated flags */\n"
+	    "    have_bus	= %u\n"
+	    "    have_devnum	= %u\n"
+	    "    have_vid	= %u\n"
+	    "    have_pid	= %u\n"
+	    "    /* Debug flags */\n"
+	    "    debug	= %u\n"
+	    "    debug_hex	= %u\n"
+	    "    debug_urbs	= %u\n"
+	    "    debug_opts	= %u\n"
+	    "    no_color	= %u\n"
+	    "  }\n",
+	    opts,
+	    opts->file_name,
+	    opts->idVendor,
+	    opts->idProduct,
+	    opts->bus,
+	    opts->devnum,
+
+	    /** The actions that are to be performed. */
+	    opts->actions,
+	    format_actions(opts->actions),
+
+	    /**
+	     * Options that were explicitly selected at the command line or, after
+	     * command line parsing, were assigned as default values.
+	     */
+
+	    opts->flags,
+	    /* Actions */
+	    !!opts->check,
+	    !!opts->unlock,
+	    !!opts->erase,
+	    !!opts->write,
+	    !!opts->verify,
+	    !!opts->sign,
+	    !!opts->reset,
+
+	    /* Anti-actions */
+	    !!opts->no_erase,
+	    !!opts->no_verify,
+
+	    /* Flags to indicate if a data item is populated. */
+	    !!opts->have_bus,
+	    !!opts->have_devnum,
+	    !!opts->have_vid,
+	    !!opts->have_pid,
+
+	    /* Debugging and output */
+	    !!opts->debug,
+	    !!opts->debug_hex,
+	    !!opts->debug_urbs,
+	    !!opts->debug_opts,
+	    !!opts->no_color
+    );
 }
