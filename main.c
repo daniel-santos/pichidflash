@@ -66,7 +66,7 @@ PACKAGE_TARNAME " v" VERSION ": a Microchip PIC USB HID Bootloader utility\n"
 "\n"
 "Actions:\n"
 "-w, --write     Write hex file to device (implies --check, --erase, --verify).\n"
-"-c, --check     Only read the .hex file and validate it can be programmed to device.\n"
+"-c, --check-hex Only read the .hex file and validate it can be programmed to device.\n"
 "-e, --erase     Erase program memory.\n"
 "-E, --no-erase  Do not erase (only meaningful with --write).\n"
 "-S, --sign      Sign firmware image (recent PIC bootloaders).\n"
@@ -76,6 +76,8 @@ PACKAGE_TARNAME " v" VERSION ": a Microchip PIC USB HID Bootloader utility\n"
 "-V, --no-verify Do not perform verfication (only meaningful with --write)\n"
 "-u, --unlock    Unlock configuration memory before erase/write and allow\n"
 "                hex file to overwrite configuration bytes\n"
+"-l, --lock      (Re)lock configuration memory after all other operations \n"
+"                have been performed\n"
 "-q, --query     Only query the device and exit\n"
 "\n"
 "Options:\n"
@@ -108,9 +110,12 @@ char debug_buf[0x1000];
 struct pbuf pbuf = PBUF_INIT(debug_buf);
 
 int main(int argc, char *argv[]) {
-    int ret;
+    int ret = -1;
     struct hex_file *hex = NULL;
     struct usb_hid_bootloader *bl = NULL;
+    bool need_file;
+    bool need_dev;
+    bool have_dev;
 
     /* To create a sensible sequence of operations, all command-line
        input is processed prior to taking any actions.  The sequence
@@ -137,8 +142,9 @@ int main(int argc, char *argv[]) {
         int c;
         int option_index = 0;
         static struct option long_options[] = {
-            {"check",       no_argument,        0, 'c'},
+            {"check-hex",   no_argument,        0, 'c'},
             {"unlock",      no_argument,        0, 'u'},
+            {"lock",        no_argument,        0, 'l'},
             {"erase",       no_argument,        0, 'e'},
             {"write",       no_argument,        0, 'w'},
             {"verify",      no_argument,        0, 'v'},
@@ -178,6 +184,10 @@ int main(int argc, char *argv[]) {
 
         case 'u':
             opts.unlock = true;
+            break;
+
+        case 'l':
+            opts.lock = true;
             break;
 
         case 'e':
@@ -294,6 +304,7 @@ int main(int argc, char *argv[]) {
 
     opts.actions = (opts.check  ? ACTION_CHECK  : 0)
                  | (opts.unlock ? ACTION_UNLOCK : 0)
+                 | (opts.lock   ? ACTION_LOCK : 0)
                  | (opts.erase  ? ACTION_ERASE  : 0)
                  | (opts.write  ? ACTION_WRITE | ACTION_CHECK
                                   | (!opts.no_erase  ? ACTION_ERASE  : 0)
@@ -309,8 +320,11 @@ int main(int argc, char *argv[]) {
         print_options(argv[0]);
     }
 
-    if (!opts.file_name && (opts.actions & (ACTION_CHECK | ACTION_WRITE
-                                                        | ACTION_VERIFY))) {
+    need_file = !!(opts.actions & (ACTION_CHECK | ACTION_WRITE
+				   | ACTION_VERIFY));
+    need_dev = !!(opts.actions & (~ACTION_CHECK));
+
+    if (!opts.file_name && need_file) {
         err("No input file specified.\n");
         print_options(argv[0]);
     }
@@ -325,17 +339,29 @@ int main(int argc, char *argv[]) {
     if (opts.file_name && !(hex = hex_file_open(opts.file_name)))
         fail("Failed to open file %s\n", opts.file_name);
 
-    if (IS_ERR(bl = bl_open())) {
-        errno = -PTR_ERR(bl);
-        perror("bl_open");
-        return -1;
+    if (!IS_ERR(bl = bl_open())) {
+	have_dev = true;
+    } else {
+	have_dev = false;
+	errno = -PTR_ERR(bl);
+	perror("bl_open");
+	if (need_dev) {
+	    goto close_hex;
+	} else {
+	    fprintf(stderr, "Proceeding without USB device...\n");
+	    if (IS_ERR(bl = bl_open_sim())) {
+		errno = -PTR_ERR(bl);
+		perror("bl_open");
+		goto close_hex;
+	    }
+	}
     }
 
     info("USB HID device found...\n");
 
     /* And start doing stuff... */
 
-    if ((ret = bl_query(bl)))
+    if (have_dev && (ret = bl_query(bl)))
         fail("Device query failed.\n");
 
     if (opts.debug) {
@@ -349,15 +375,6 @@ int main(int argc, char *argv[]) {
 
     putchar('\n');
 
-    if (opts.actions & ACTION_CHECK) {
-        info("Reading file '%s'...", hex->name);
-        bl_set_simulation_mode(bl, true);
-        if (hex_file_validate(hex, bl))
-            fail("\nFailed to parse file %s.\n",opts.file_name);
-        bl_set_simulation_mode(bl, false);
-        info("done\n");
-    }
-
     if (opts.actions & ACTION_UNLOCK) {
         info("Unlocking configuration...");
         if (bl_unlock_config(bl))
@@ -366,6 +383,15 @@ int main(int argc, char *argv[]) {
     } else
         /* Otherwise make sure we don't try to modify it. */
         bl_protect_config(bl);
+
+    if (opts.actions & ACTION_CHECK) {
+        info("Reading file '%s'...", hex->name);
+        bl_set_simulation_mode(bl, true);
+        if (hex_file_validate(hex, bl))
+            fail("\nFailed to parse file %s.\n",opts.file_name);
+        bl_set_simulation_mode(bl, false);
+        info("done\n");
+    }
 
     if (opts.actions & ACTION_ERASE) {
         info("Erasing...");
@@ -395,6 +421,13 @@ int main(int argc, char *argv[]) {
         info("done\n");
     }
 
+    if (opts.actions & ACTION_LOCK) {
+        info("Locking configuration...");
+        if (bl_lock_config(bl))
+            fail("Lock command failed.\n");
+        info("done\n");
+    }
+
     if (opts.actions & ACTION_RESET) {
         info("Resetting device...");
         if (bl_reset(bl))
@@ -404,6 +437,8 @@ int main(int argc, char *argv[]) {
 
     bl_close(bl);
     free(bl);
+
+close_hex:
     if (hex)
         hex_close(hex);
 

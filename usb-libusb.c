@@ -56,6 +56,12 @@
 #define QUERY_EXTENDED_INFO         0x0C    //Used by host PC app to get additional info about the device, beyond the basic NVM layout provided by the query device command
 #endif
 
+#define PIC18NONJ_BYTES_PER_ADDRESS_PIC18     0x01        //One byte per address.  PIC24 uses 2 bytes for each address in the hex file.
+#define PIC18NONJ_USB_PACKET_SIZE             0x40
+#define PIC18NONJ_WORDSIZE                    0x02    //PIC18 uses 2 byte words, PIC24 uses 3 byte words.
+#define PIC18NONJ_REQUEST_DATA_BLOCK_SIZE     0x3A    //Number of data bytes in a standard request to the PC.  Must be an even number from 2-58 (0x02-0x3A).  Larger numbers make better use of USB bandwidth and
+                                            //yeild shorter program/verify times, but require more micrcontroller RAM for buffer space.
+
 
 /* Bootloader commands */
 
@@ -454,6 +460,29 @@ struct usb_hid_bootloader *bl_open(void) {
     return bl;
 }
 
+struct usb_hid_bootloader *bl_open_sim(void) {
+    struct usb_hid_bootloader *bl;
+    bl = malloc(sizeof(*bl));
+    const struct memory_region fake_mem = {
+	.start	= 0x001000,
+	.end	= 0x008000,
+	.type	= MEM_REGION_PROGRAM_MEM,
+    };
+
+    if (!bl)
+        return ERR_PTR(-ENOMEM);
+    memset(bl, 0, sizeof(*bl));
+    bl->simulating = true;
+    bl->ignore_config = true;
+    bl->free_program_memory = 0xffffffff;
+    bl->mem[0] = fake_mem;
+    bl->mem_region_count = 1;
+    bl->have_info = true;
+    bl->info.PacketDataFieldSize = PIC18NONJ_REQUEST_DATA_BLOCK_SIZE;
+    bl->info.BytesPerAddress = PIC18NONJ_BYTES_PER_ADDRESS_PIC18;
+    return bl;
+}
+
 /**
  * When entering or leaving simulation mode we must finalize any writes.
  */
@@ -690,6 +719,7 @@ int bl_write_data(struct usb_hid_bootloader *bl, struct parse_state *state,
             "0x%08x, length = %u\n", addr, r->size);
         return EINVAL;
     }
+
     if (type == MEM_REGION_CONFIG) {
         if (bl->ignore_config) {
             warn("skipping config...\n");

@@ -114,18 +114,20 @@ static inline bool __must_check IS_ERR_OR_NULL(const void *ptr)
 enum actions {
     ACTION_CHECK        = 1 << 0,
     ACTION_UNLOCK       = 1 << 1,
-    ACTION_ERASE        = 1 << 2,
-    ACTION_WRITE        = 1 << 3,
-    ACTION_VERIFY       = 1 << 4,
-    ACTION_SIGN         = 1 << 5,
-    ACTION_RESET        = 1 << 6,
-    ACTION_QUERY_ONLY   = 1 << 7,
+    ACTION_LOCK         = 1 << 2,
+    ACTION_ERASE        = 1 << 3,
+    ACTION_WRITE        = 1 << 4,
+    ACTION_VERIFY       = 1 << 5,
+    ACTION_SIGN         = 1 << 6,
+    ACTION_RESET        = 1 << 7,
+    ACTION_QUERY_ONLY   = 1 << 8,
 };
 
 #if 1
-static const char actions_str[8][7] = {
+static const char actions_str[9][7] = {
     {"CHECK"},
     {"UNLOCK"},
+    {"LOCK"},
     {"ERASE"},
     {"WRITE"},
     {"VERIFY"},
@@ -172,6 +174,7 @@ struct options {
             /* Actions */
             int check:1;
             int unlock:1;
+            int lock:1;
             int erase:1;
             int write:1;
             int verify:1;
@@ -435,6 +438,7 @@ static inline int hex_file_verify(struct hex_file *hex, struct usb_hid_bootloade
 
 /* Functions defined in usb-hid-bootloader.c */
 struct usb_hid_bootloader *bl_open(void);
+struct usb_hid_bootloader *bl_open_sim(void);
 void bl_set_simulation_mode(struct usb_hid_bootloader *bl, bool enabled);
 void bl_protect_config(struct usb_hid_bootloader *bl);
 int bl_lock_unlock_config(struct usb_hid_bootloader *bl, bool locked);
