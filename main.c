@@ -49,7 +49,9 @@
 
 static struct options opts;
 
-static void dump_opts(const struct options *opts);
+static void dump_opts(struct pbuf *dest, unsigned ind, const struct options *opts);
+static void dump_pic_info(struct pbuf *dest, unsigned ind, const struct pic_info *o);
+static void dump_info(struct pbuf *dest, unsigned ind, const struct usb_hid_bootloader *o);
 
 const struct options *get_opts(void)
 {
@@ -60,9 +62,9 @@ const char *const help_str =
 PACKAGE_TARNAME " v" VERSION ": a Microchip PIC USB HID Bootloader utility\n"
 "\n"
 "USAGE\n"
-"    " PACKAGE_TARNAME " <action> [options] [hex_file]\n"
+"    " PACKAGE_TARNAME " <action(s)> [options] [hex_file]\n"
 "\n"
-"action is one of\n"
+"Actions:\n"
 "-w, --write     Write hex file to device (implies --check, --erase, --verify).\n"
 "-c, --check     Only read the .hex file and validate it can be programmed to device.\n"
 "-e, --erase     Erase program memory.\n"
@@ -74,6 +76,9 @@ PACKAGE_TARNAME " v" VERSION ": a Microchip PIC USB HID Bootloader utility\n"
 "-V, --no-verify Do not perform verfication (only meaningful with --write)\n"
 "-u, --unlock    Unlock configuration memory before erase/write and allow\n"
 "                hex file to overwrite configuration bytes\n"
+"-q, --query     Only query the device and exit\n"
+"\n"
+"Options:\n"
 "-D, --device vid:pid\n"
 "                Specify 4 digit hexidecimal Vendor ID and Product ID.\n"
 "                Defaults to %04hx:%04hx if --slot is unspecified, unset\n"
@@ -98,6 +103,9 @@ static void print_options(const char *argv0)
     fprintf(stderr, help_str, DEFAULT_ID_VENDOR, DEFAULT_ID_PRODUCT);
     exit(-1);
 }
+
+char debug_buf[0x1000];
+struct pbuf pbuf = PBUF_INIT(debug_buf);
 
 int main(int argc, char *argv[]) {
     int ret;
@@ -136,6 +144,7 @@ int main(int argc, char *argv[]) {
             {"verify",      no_argument,        0, 'v'},
             {"sign",        no_argument,        0, 'S'},
             {"reset",       no_argument,        0, 'r'},
+            {"query",       no_argument,        0, 'q'},
             {"no-erase",    no_argument,        0, 'E'},
             {"no-verify",   no_argument,        0, 'V'},
             {"slot",        required_argument,  0, 's'},
@@ -151,7 +160,7 @@ int main(int argc, char *argv[]) {
         };
 
 
-        c = getopt_long(argc, argv, "cuewvSrEVs:b:D:dHUOCh", long_options, &option_index);
+        c = getopt_long(argc, argv, "cuewvSrqEVs:b:D:dHUOCh", long_options, &option_index);
 
         if (c == -1)
             break;
@@ -189,6 +198,10 @@ int main(int argc, char *argv[]) {
 
         case 'r':
             opts.reset = true;
+            break;
+
+        case 'q':
+            opts.query = true;
             break;
 
         case 'E':
@@ -246,6 +259,13 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    opts.log_config.level		= LOG_DEBUG;
+    opts.log_config.prog_name		= argv[0];
+    opts.log_config.syslog		= false;
+    opts.log_config.dbg_timestamps	= true;
+    opts.log_config.dbg_src	 	= false;
+    log_config = &opts.log_config;
+
     if (optind < argc)
         opts.file_name = argv[optind++];
 
@@ -281,7 +301,8 @@ int main(int argc, char *argv[]) {
                                 : 0)
                  | (opts.verify ? ACTION_VERIFY | ACTION_CHECK : 0)
                  | (opts.sign   ? ACTION_SIGN   : 0)
-                 | (opts.reset  ? ACTION_RESET  : 0);
+                 | (opts.reset  ? ACTION_RESET  : 0)
+                 | (opts.query  ? ACTION_QUERY_ONLY  : 0);
 
     if (!opts.actions) {
         err("Nothing to do.\n");
@@ -295,7 +316,9 @@ int main(int argc, char *argv[]) {
     }
 
     if (opts.debug_opts) {
-	dump_opts(&opts);
+	dump_opts(&pbuf, 0, &opts);
+	trace(LOG_DEBUG, "%s", pbuf.buf);
+	pbuf_reset(&pbuf);
 	exit(0);
     }
 
@@ -314,6 +337,12 @@ int main(int argc, char *argv[]) {
 
     if ((ret = bl_query(bl)))
         fail("Device query failed.\n");
+
+    if (opts.debug) {
+	dump_info(&pbuf, 0, bl);
+	trace(LOG_DEBUG, "%s", pbuf.buf);
+	pbuf_reset(&pbuf);
+    }
 
     if (bl->free_program_memory)
         info("%d bytes free\n", bl->free_program_memory);
@@ -403,81 +432,180 @@ const char *format_actions(enum actions actions) {
     return buf;
 }
 
-static void dump_opts(const struct options *opts)
+#define PBUF_INIT(buf_) {	\
+    .buf	= buf_,		\
+    .size	= sizeof(buf_),	\
+    .pos	= buf_,		\
+    .err	= 0		\
+}
+
+static void dump_opts(struct pbuf *dest, unsigned ind, const struct options *opts)
 {
-    fprintf(stderr,
-	    "struct options %p = {\n"
-	    "  file_name	= %s\n"
-	    "  idVendor	= 0x%04hx\n"
-	    "  idProduct	= 0x%04hx\n"
-	    "  bus\t	= %u\n"
-	    "  devnum	= %hhu\n"
-	    "  actions	= 0x%02x (%s)\n"
-	    "  flags\t	= 0x%08x {\n"
-	    "    /* Action flags */\n"
-	    "    check	= %u\n"
-	    "    unlock	= %u\n"
-	    "    erase	= %u\n"
-	    "    write	= %u\n"
-	    "    verify	= %u\n"
-	    "    sign	= %u\n"
-	    "    reset	= %u\n"
-	    "    /* Anti-action flags */\n"
-	    "    no_erase	= %u\n"
-	    "    no_verify	= %u\n"
-	    "    /* Data populated flags */\n"
-	    "    have_bus	= %u\n"
-	    "    have_devnum	= %u\n"
-	    "    have_vid	= %u\n"
-	    "    have_pid	= %u\n"
-	    "    /* Debug flags */\n"
-	    "    debug	= %u\n"
-	    "    debug_hex	= %u\n"
-	    "    debug_urbs	= %u\n"
-	    "    debug_opts	= %u\n"
-	    "    no_color	= %u\n"
-	    "  }\n",
-	    opts,
-	    opts->file_name,
-	    opts->idVendor,
-	    opts->idProduct,
-	    opts->bus,
-	    opts->devnum,
+    pbuf_printf(dest,
+	    "%sstruct options %p = {\n"
+	    "%s  file_name	= %s\n"
+	    "%s  idVendor	= 0x%04hx\n"
+	    "%s  idProduct	= 0x%04hx\n"
+	    "%s  bus\t	= %u\n"
+	    "%s  devnum	= %hhu\n"
+	    "%s  actions	= 0x%02x (%s)\n"
+	    "%s  flags\t	= 0x%08x {\n"
+	    "%s    /* Action flags */\n"
+	    "%s    check	= %u\n"
+	    "%s    unlock	= %u\n"
+	    "%s    erase	= %u\n"
+	    "%s    write	= %u\n"
+	    "%s    verify	= %u\n"
+	    "%s    sign	= %u\n"
+	    "%s    reset	= %u\n"
+	    "%s    /* Anti-action flags */\n"
+	    "%s    no_erase	= %u\n"
+	    "%s    no_verify	= %u\n"
+	    "%s    /* Data populated flags */\n"
+	    "%s    have_bus	= %u\n"
+	    "%s    have_devnum	= %u\n"
+	    "%s    have_vid	= %u\n"
+	    "%s    have_pid	= %u\n"
+	    "%s    /* Debug flags */\n"
+	    "%s    debug	= %u\n"
+	    "%s    debug_hex	= %u\n"
+	    "%s    debug_urbs	= %u\n"
+	    "%s    debug_opts	= %u\n"
+	    "%s    no_color	= %u\n"
+	    "%s  }\n",
+	    indent(ind), opts,
+	    indent(ind), opts->file_name,
+	    indent(ind), opts->idVendor,
+	    indent(ind), opts->idProduct,
+	    indent(ind), opts->bus,
+	    indent(ind), opts->devnum,
 
 	    /** The actions that are to be performed. */
-	    opts->actions,
-	    format_actions(opts->actions),
+	    indent(ind), opts->actions, format_actions(opts->actions),
 
 	    /**
 	     * Options that were explicitly selected at the command line or, after
 	     * command line parsing, were assigned as default values.
 	     */
 
-	    opts->flags,
+	    indent(ind), opts->flags,
+	    indent(ind),
+
 	    /* Actions */
-	    !!opts->check,
-	    !!opts->unlock,
-	    !!opts->erase,
-	    !!opts->write,
-	    !!opts->verify,
-	    !!opts->sign,
-	    !!opts->reset,
+	    indent(ind), !!opts->check,
+	    indent(ind), !!opts->unlock,
+	    indent(ind), !!opts->erase,
+	    indent(ind), !!opts->write,
+	    indent(ind), !!opts->verify,
+	    indent(ind), !!opts->sign,
+	    indent(ind), !!opts->reset,
+	    indent(ind),
 
 	    /* Anti-actions */
-	    !!opts->no_erase,
-	    !!opts->no_verify,
+	    indent(ind), !!opts->no_erase,
+	    indent(ind), !!opts->no_verify,
+	    indent(ind),
 
 	    /* Flags to indicate if a data item is populated. */
-	    !!opts->have_bus,
-	    !!opts->have_devnum,
-	    !!opts->have_vid,
-	    !!opts->have_pid,
+	    indent(ind), !!opts->have_bus,
+	    indent(ind), !!opts->have_devnum,
+	    indent(ind), !!opts->have_vid,
+	    indent(ind), !!opts->have_pid,
+	    indent(ind),
 
 	    /* Debugging and output */
-	    !!opts->debug,
-	    !!opts->debug_hex,
-	    !!opts->debug_urbs,
-	    !!opts->debug_opts,
-	    !!opts->no_color
+	    indent(ind), !!opts->debug,
+	    indent(ind), !!opts->debug_hex,
+	    indent(ind), !!opts->debug_urbs,
+	    indent(ind), !!opts->debug_opts,
+	    indent(ind), !!opts->no_color,
+	    indent(ind)
+    );
+}
+
+static void dump_pic_info(struct pbuf *dest, unsigned ind, const struct pic_info *o)
+{
+    unsigned i;
+    pbuf_printf(dest,
+	    "%sstruct options %p = {\n"
+	    "%s  Command		= 0x%02hhx (%s)\n"
+	    "%s  PacketDataFieldSize	= %hhu\n"
+	    "%s  BytesPerAddress	= %uuh\n"
+	    "%s  mem			= {\n",
+	    indent(ind), o,
+	    indent(ind), o->Command, cmd_name(o->Command),
+	    indent(ind), o->PacketDataFieldSize,
+	    indent(ind), o->BytesPerAddress,
+	    indent(ind)
+    );
+
+    for (i = 0; i < sizeof(o->mem) / sizeof(o->mem[0]); ++i) {
+	const struct pic_info_mem *m = o->mem + i;
+	pbuf_printf(dest,
+	    "%s    [%u] = {0x%02hhx, 0x%08x, 0x%08x}\n",
+	     indent(ind), i, m->Type, m->Address, m->Length
+	);
+    }
+
+    pbuf_printf(dest,
+	    "%s  VersionFlag		= 0x%02hhx\n"
+	    "%s}\n",
+	    indent(ind), o->VersionFlag,
+	    indent(ind)
+    );
+}
+
+static void dump_info(struct pbuf *dest, unsigned ind, const struct usb_hid_bootloader *o)
+{
+    unsigned i, max;
+
+    pbuf_printf(dest,
+	    "%sstruct usb_hid_bootloader %p = {\n"
+	    "%s  h			= %p\n"
+	    "%s  have_info		= %u\n"
+	    "%s  dirty			= %u\n"
+	    "%s  writing		= %u\n"
+	    "%s  simulating		= %u\n"
+	    "%s  protect_config		= %u\n"
+	    "%s  stupid_byte_written	= %u\n"
+	    "%s  ignore_config		= %u\n"
+	    "%s  info = {\n",
+	    indent(ind), o,
+	    indent(ind), o->h,
+	    indent(ind), !!o->have_info,
+	    indent(ind), !!o->dirty,
+	    indent(ind), !!o->writing,
+	    indent(ind), !!o->simulating,
+	    indent(ind), !!o->protect_config,
+	    indent(ind), !!o->stupid_byte_written,
+	    indent(ind), !!o->ignore_config,
+	    indent(ind)
+    );
+
+    dump_pic_info(dest, ind + 2, &o->info);
+
+    pbuf_printf(dest,
+	    "%s  free_program_memory	= 0x%08x (%u)\n"
+	    "%s  mem_region_count	= %u\n"
+	    "%s  mem			= {\n",
+	    indent(ind), o->free_program_memory, o->free_program_memory,
+	    indent(ind), o->mem_region_count,
+	    indent(ind)
+    );
+
+    max = o->mem_region_count;
+    if (max > sizeof(o->mem) / sizeof(o->mem[0]))
+	max = sizeof(o->mem) / sizeof(o->mem[0]);
+
+    for (i = 0; i < max; ++i) {
+	const struct memory_region *m = o->mem + i;
+	pbuf_printf(dest,
+	    "%s    [%u] = {0x%08x, 0x%08x, %u}\n",
+	     indent(ind), i, m->start, m->end, m->type
+	);
+    }
+    pbuf_printf(dest,
+		"%s}\n",
+		indent(ind)
     );
 }

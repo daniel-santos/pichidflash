@@ -36,6 +36,7 @@ AC_CHECK_HEADER_STDBOOL
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_SIZE_T
+AC_TYPE_SSIZE_T
 AC_TYPE_UINT32_T
 AC_TYPE_UINT16_T
 AC_TYPE_UINT8_T
@@ -43,7 +44,7 @@ AC_TYPE_UINT8_T
 # Checks for library functions.
 AC_FUNC_MALLOC
 AC_FUNC_MMAP
-AC_CHECK_FUNCS([munmap memset])
+AC_CHECK_FUNCS([munmap memset clock_gettime strerror])
 
 AC_ARG_ENABLE([debug],
     AS_HELP_STRING([--disable-debug], [Omit verbose debug code for formatting,

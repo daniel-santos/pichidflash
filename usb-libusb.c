@@ -139,6 +139,14 @@ const char *const cmd_names[CMD_MAX] = {
     "CMD_QUERY_EXTENDED_INFO",
 };
 
+const char *cmd_name(uint8_t cmd)
+{
+    if (cmd < CMD_MAX && cmd_names[cmd])
+        return cmd_names[cmd];
+    else
+	return "UNKNOWN";
+}
+
 /* Sub-commands for the ERASE_DEVICE command */
 #define UNLOCKCONFIG      0x00
 #define LOCKCONFIG        0x01
@@ -404,6 +412,7 @@ static struct usb_dev_handle *find_and_open_usb(void) {
         ret = -errno;
         perror("usb_open");
         err("Failed to open device: %s\n", usb_strerror());
+	return ERR_PTR(ret);
     }
 
     if (opts->debug_urbs)

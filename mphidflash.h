@@ -50,6 +50,7 @@
 
 #include <sys/stat.h>
 
+#include "log.h"
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(*arr))
 
@@ -118,10 +119,11 @@ enum actions {
     ACTION_VERIFY       = 1 << 4,
     ACTION_SIGN         = 1 << 5,
     ACTION_RESET        = 1 << 6,
+    ACTION_QUERY_ONLY   = 1 << 7,
 };
 
 #if 1
-static const char actions_str[7][7] = {
+static const char actions_str[8][7] = {
     {"CHECK"},
     {"UNLOCK"},
     {"ERASE"},
@@ -129,8 +131,11 @@ static const char actions_str[7][7] = {
     {"VERIFY"},
     {"SIGN"},
     {"RESET"},
+    {"QUERY"},
 };
 #endif
+
+const char *cmd_name(uint8_t cmd);
 
 #if 0
 const char actions_str[7 * 7] = {
@@ -172,6 +177,7 @@ struct options {
             int verify:1;
             int sign:1;
             int reset:1;
+            int query:1;
 
             /* Anti-actions */
             int no_erase:1;
@@ -191,6 +197,7 @@ struct options {
             int no_color:1;
         };
     };
+    struct log_config log_config;
 };
 
 const struct options *get_opts(void);
